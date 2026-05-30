@@ -1,0 +1,14 @@
+# AURORA Video Brief Template — Sprint 1
+# Fill every field. AURORA gate_preproduction_packet validates presence.
+brief_id: null                          # uuid generated on create
+created_at: null                        # iso timestamp generated
+operator_intent: ""                     # required, free text
+output_type: ""                         # required, enum: hero_ad|ugc|cinematic_ad|product_demo|fashion_film|sports_scene|social_vertical|other
+duration_seconds: 0                     # required, int > 0
+emotional_beat: ""                      # required
+product_or_brand: ""                    # required
+core_action: ""                         # required
+target_audience: ""                     # required
+final_frame_description: ""             # required
+audio_strategy: ""                      # required, enum: native_ai|external_track|silent|mixed
+success_criteria: []                    # required, list len >= 1

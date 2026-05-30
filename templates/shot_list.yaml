@@ -1,0 +1,26 @@
+# AURORA Shot List Template — Sprint 1
+# Each shot is required to have biomechanical_motion_plan_id and anchor_strategy.
+project_id: null                        # uuid required
+total_duration_seconds: 0               # sum of all shot durations
+shots:
+  - shot_number: 1
+    duration_seconds: 0                 # required
+    shot_type: ""                       # required, enum: establishing|medium|close_up|extreme_close|wide|over_shoulder|product_insert|action|hero_frame
+    function: ""                        # required
+    camera_movement: ""                 # required, enum: pan|tilt|dolly|truck|static|handheld
+    speed_ramp: "linear"                # enum: linear|slowmo|speedup|flash_in|flash_out|bullet_time|impact|ramp_up
+    biomechanical_motion_plan_id: null  # required, references biomechanical plan
+    anchor_strategy:                    # required, inline or referenced
+      case_type: ""                     # enum: simple_start|start_and_end|open_end|multishot_per_shot|continuity_from_previous|dialogue_long|complex_scene
+      ff_image_ref: null
+      lf_image_ref: null
+      character_sheet_ref: null
+      prop_sheet_ref: null
+      location_sheet_ref: null
+      previous_clip_last_seconds_ref: null
+      intermediate_screenshot_ref: null
+    prompt_creative: ""                 # required
+    prompt_technical_per_model: {}      # required, dict model_id -> prompt string
+    prompt_biomechanical: ""            # required
+    prompt_continuity: ""               # required for multishot, optional for single
+    negative_constraints: []            # required, list len >= 1

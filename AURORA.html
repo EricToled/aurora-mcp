@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AURORA — Image Director & Video Production Director</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #14141c;
+    --panel2: #1c1c28;
+    --line: #2a2a3a;
+    --text: #e8e8f0;
+    --muted: #8a8aa0;
+    --accent: #6ee7ff;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.5;
+  }
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #16161f, #0a0a0f);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 {
+    margin: 0; font-size: 20px; letter-spacing: 3px; font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), #a78bfa);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 28px 80px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; flex-wrap: wrap; }
+  .tab {
+    padding: 9px 16px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--muted); cursor: pointer; border-radius: 8px; font-size: 13px;
+    font-weight: 600; transition: all .15s;
+  }
+  .tab:hover { color: var(--text); border-color: #3a3a4f; }
+  .tab.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+  .view { display: none; }
+  .view.active { display: block; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px; margin-bottom: 18px;
+  }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card .desc { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+  textarea, input[type=text], select {
+    width: 100%; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; font-family: var(--mono); font-size: 13px; }
+  textarea:focus, input:focus, select:focus { outline: none; border-color: var(--accent); }
+  button.act {
+    margin-top: 16px; padding: 11px 22px; background: var(--accent); color: #04141a;
+    border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px;
+  }
+  button.act:hover { filter: brightness(1.1); }
+  button.ghost {
+    background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  }
+  .out {
+    margin-top: 18px; background: #05050a; border: 1px solid var(--line);
+    border-radius: 8px; padding: 16px; font-family: var(--mono); font-size: 13px;
+    white-space: pre-wrap; word-break: break-word; min-height: 20px;
+  }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+  .pill.ok { background: rgba(74,222,128,.15); color: var(--ok); }
+  .pill.warn { background: rgba(251,191,36,.15); color: var(--warn); }
+  .pill.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  .pill.muted { background: rgba(138,138,160,.15); color: var(--muted); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .checklist { list-style: none; padding: 0; margin: 0; }
+  .checklist li {
+    display: flex; align-items: center; gap: 10px; padding: 7px 0;
+    border-bottom: 1px solid var(--line); font-size: 14px;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.bad { background: var(--bad); }
+  .rules { font-size: 13px; color: var(--muted); }
+  .rules b { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  .empty { color: var(--muted); font-style: italic; padding: 16px 0; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .banner {
+    background: rgba(110,231,255,.08); border: 1px solid rgba(110,231,255,.3);
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--accent);
+    margin-bottom: 18px;
+  }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>A U R O R A</h1>
+  <p>Image Director &amp; Video Production Director — artifact portable (sin Python, sin instalación, corre en cualquier navegador)</p>
+</header>
+
+<div class="wrap">
+  <div class="banner">
+    Este archivo es AURORA completo en un solo archivo. Funciona sin internet, sin Python y sin Cowork.
+    Guárdalo donde quieras y ábrelo con doble clic. Tus bypasses y briefs se guardan en este navegador.
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-view="bypass">1 · Bypass</div>
+    <div class="tab" data-view="classify">2 · Clasificar</div>
+    <div class="tab" data-view="gate">3 · Gate Preproducción</div>
+    <div class="tab" data-view="brief">4 · Brief</div>
+    <div class="tab" data-view="log">Audit Log</div>
+    <div class="tab" data-view="rules">Reglas</div>
+  </div>
+
+  <!-- BYPASS -->
+  <div class="view active" id="view-bypass">
+    <div class="card">
+      <h2>Detector de Bypass</h2>
+      <p class="desc">Pega el texto literal del operador. AURORA detecta la sintaxis de override y la registra. Siempre se corre PRIMERO.</p>
+      <label>Texto del operador</label>
+      <textarea id="bypassText" placeholder="OVERRIDE: gate_preproduction_packet - prototipo rápido"></textarea>
+      <div class="hint">Sintaxis: <code>OVERRIDE: &lt;componente&gt; - &lt;razón&gt;</code> · <code>OVERRIDE PERSIST: ...</code> · <code>REVOKE OVERRIDE: &lt;componente&gt;</code> · <code>BYPASS AURORA - &lt;razón&gt;</code> · <code>/override ...</code> · <code>/bypass-all - &lt;razón&gt;</code></div>
+      <button class="act" onclick="runBypass()">Detectar y registrar</button>
+      <div class="out" id="bypassOut">—</div>
+    </div>
+  </div>
+
+  <!-- CLASSIFY -->
+  <div class="view" id="view-classify">
+    <div class="card">
+      <h2>Clasificar Intención</h2>
+      <p class="desc">Resuelve modo, tipo de output y estilo a partir del texto natural del operador. (Sprint 1: heurística ligera.)</p>
+      <label>Texto natural</label>
+      <textarea id="classifyText" placeholder="8s hero ad para Sports World, estilo editorial cinematográfico"></textarea>
+      <button class="act" onclick="runClassify()">Clasificar</button>
+      <div class="out" id="classifyOut">—</div>
+    </div>
+  </div>
+
+  <!-- GATE -->
+  <div class="view" id="view-gate">
+    <div class="card">
+      <h2>Gate de Preproducción — regla inviolable</h2>
+      <p class="desc">Para video, los 12 componentes del preproduction packet deben existir antes de cualquier prompt. Marca lo que tienes.</p>
+      <ul class="checklist" id="gateChecklist"></ul>
+      <button class="act" onclick="runGate()">Validar packet</button>
+      <button class="act ghost" onclick="fillGateDemo()">Llenar ejemplo</button>
+      <div class="out" id="gateOut">—</div>
+    </div>
+  </div>
+
+  <!-- BRIEF -->
+  <div class="view" id="view-brief">
+    <div class="card">
+      <h2>Crear Video Brief</h2>
+      <p class="desc">Guarda un brief en este navegador. Cada brief recibe un <code>brief_id</code> único.</p>
+      <div class="grid2">
+        <div><label>Idea</label><input type="text" id="bIdea" placeholder="Hero ad de 8s para Sports World"></div>
+        <div><label>Output type</label>
+          <select id="bOutput">
+            <option>hero_ad</option><option>product_demo</option><option>social_short</option>
+            <option>brand_film</option><option>explainer</option>
+          </select>
+        </div>
+        <div><label>Duración (segundos)</label><input type="text" id="bDuration" placeholder="8"></div>
+        <div><label>Estilo visual</label><input type="text" id="bStyle" placeholder="editorial cinematográfico"></div>
+      </div>
+      <label>Notas / guion</label>
+      <textarea id="bScript" placeholder="Descripción del brief..."></textarea>
+      <button class="act" onclick="saveBrief()">Guardar brief</button>
+      <div class="out" id="briefOut">—</div>
+    </div>
+    <div class="card">
+      <h2>Briefs guardados</h2>
+      <div id="briefList"></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="view" id="view-log">
+    <div class="card">
+      <h2>Audit Log — bypasses registrados</h2>
+      <p class="desc">Todo bypass aceptado queda aquí (equivalente a la tabla <code>bypass_log</code>).</p>
+      <div id="logList"></div>
+      <button class="act ghost" onclick="clearLog()" style="margin-top:18px">Borrar log</button>
+    </div>
+  </div>
+
+  <!-- RULES -->
+  <div class="view" id="view-rules">
+    <div class="card">
+      <h2>Reglas inviolables</h2>
+      <div class="rules">
+        <p>1. <b>NO</b> generes prompts de video sin preproduction packet validado.</p>
+        <p>2. <b>NO</b> inventes URLs, modelos, capabilities o fuentes — si no sabes, di "no sé".</p>
+        <p>3. <b>NO</b> mezcles asset pipeline (imagen) con production pipeline (video).</p>
+        <p>4. Iteración = una variable a la vez (modelo / anchor / biomecánica), nunca múltiples cambios simultáneos.</p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Soberanía del operador</h2>
+      <div class="rules">
+        <p>El operador puede saltar cualquier regla con sintaxis explícita. Cuando lo haga, AURORA registra el bypass y procede sin cuestionar.</p>
+        <p><b>Componentes que aceptan bypass:</b></p>
+        <p style="font-family:var(--mono);font-size:12px;color:var(--text)">gate_step_0 · gate_preproduction_packet · gate_continuity_anchors · biomechanical_check · prompt_linter · router_ui_vs_mcp · model_selection · tribal_mining_freshness · theme_resolver · all</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// AURORA core logic — ported 1:1 from the Python Sprint 1 implementation
+// (bypass_handler.py, gate_preproduction_packet.py, theme_resolver.py)
+// =====================================================================
+
+const BYPASSABLE_COMPONENTS = new Set([
+  "gate_step_0","gate_preproduction_packet","gate_continuity_anchors",
+  "biomechanical_check","prompt_linter","router_ui_vs_mcp","model_selection",
+  "tribal_mining_freshness","theme_resolver","all"
+]);
+
+const RE_OVERRIDE_PERSIST = /OVERRIDE PERSIST:\s*([\w_]+)\s*-\s*(.+?)(?:\n|$)/;
+const RE_REVOKE           = /REVOKE OVERRIDE:\s*([\w_]+)/;
+const RE_OVERRIDE         = /OVERRIDE:\s*([\w_]+)\s*-\s*(.+?)(?:\n|$)/;
+const RE_BYPASS_AURORA    = /BYPASS AURORA\s*-\s*(.+?)(?:\n|$)/;
+const RE_SLASH_OVERRIDE   = /\/override\s+([\w_]+)\s*-\s*(.+?)(?:\n|$)/;
+const RE_SLASH_BYPASS_ALL = /\/bypass-all\s*-\s*(.+?)(?:\n|$)/;
+
+function valid(component, reason) {
+  if (!BYPASSABLE_COMPONENTS.has(component)) return false;
+  if (!reason || !reason.trim()) return false;
+  return true;
+}
+
+// Mirrors parse_bypass(): order matters — specific forms before generic OVERRIDE.
+function parseBypass(text) {
+  if (!text) return null;
+  let m;
+
+  m = text.match(RE_REVOKE);
+  if (m) {
+    const component = m[1].trim();
+    if (BYPASSABLE_COMPONENTS.has(component))
+      return { component, reason: "revoke", scope: "persist", revoke: true, detected_in_text: m[0].trim() };
+    return null;
+  }
+  m = text.match(RE_OVERRIDE_PERSIST);
+  if (m) {
+    const c = m[1].trim(), r = m[2].trim();
+    if (valid(c, r)) return { component: c, reason: r, scope: "persist", revoke: false, detected_in_text: m[0].trim() };
+    return null;
+  }
+  m = text.match(RE_BYPASS_AURORA);
+  if (m) {
+    const r = m[1].trim();
+    if (valid("all", r)) return { component: "all", reason: r, scope: "current_turn", revoke: false, detected_in_text: m[0].trim() };
+    return null;
+  }
+  m = text.match(RE_SLASH_BYPASS_ALL);
+  if (m) {
+    const r = m[1].trim();
+    if (valid("all", r)) return { component: "all", reason: r, scope: "current_turn", revoke: false, detected_in_text: m[0].trim() };
+    return null;
+  }
+  m = text.match(RE_SLASH_OVERRIDE);
+  if (m) {
+    const c = m[1].trim(), r = m[2].trim();
+    if (valid(c, r)) return { component: c, reason: r, scope: "current_turn", revoke: false, detected_in_text: m[0].trim() };
+    return null;
+  }
+  m = text.match(RE_OVERRIDE);
+  if (m) {
+    const c = m[1].trim(), r = m[2].trim();
+    if (valid(c, r)) return { component: c, reason: r, scope: "current_turn", revoke: false, detected_in_text: m[0].trim() };
+    return null;
+  }
+  return null;
+}
+
+// ---- Gate: the 12 mandatory preproduction components ----
+const GATE_COMPONENTS = [
+  ["idea","Idea"], ["script","Guion / brief"], ["shot_list","Shot list"],
+  ["characters","Personajes"], ["location","Locación"], ["props_or_product","Props / producto"],
+  ["visual_style","Estilo visual"], ["biomechanical_plan","Plan biomecánico"],
+  ["ff_lf_strategy","Estrategia FF/LF"], ["recommended_model","Modelo recomendado"],
+  ["ui_or_mcp_route","Ruta UI / MCP"], ["success_criteria","Criterios de éxito"]
+];
+const VALID_FF_LF = new Set(["simple_start","start_and_end","open_end","multishot_per_shot","continuity_from_previous","dialogue_long","complex_scene"]);
+const VALID_ROUTES = new Set(["ui","mcp","hybrid"]);
+
+function validatePacket(present) {
+  // present: Set of component keys the operator has checked
+  const missing = [];
+  for (const [key] of GATE_COMPONENTS) {
+    if (!present.has(key)) missing.push(key);
+  }
+  const passed = missing.length === 0;
+  return { passed, missing, warnings: [], bypass_required_to_proceed: !passed };
+}
+
+// ---- Classify intent (Sprint 1 heuristic; Python stub returned fixed values) ----
+function classifyIntent(text) {
+  const t = (text || "").toLowerCase();
+  const isVideo = /\b(\d+\s*s|seg|video|shot|ad|spot|film|clip|kling|veo|sora|seedance|runway)\b/.test(t);
+  let output = "hero_ad";
+  if (/demo|producto|product/.test(t)) output = "product_demo";
+  else if (/social|reel|short|tiktok|story/.test(t)) output = "social_short";
+  else if (/brand|marca|film/.test(t)) output = "brand_film";
+  let style = "editorial";
+  if (/cinemat/.test(t)) style = "cinematic_ad";
+  else if (/document/.test(t)) style = "documentary";
+  else if (/anime|ilustr/.test(t)) style = "illustrated";
+  return {
+    mode: isVideo ? "video_simple" : "image",
+    output_type: output,
+    photographic_style: style,
+    cinematic_style: isVideo ? "cinematic_ad" : "n/a",
+    confidence: text && text.trim() ? 0.5 : 0.0,
+    operator_text: text || "",
+    note: "Sprint 1 heuristic — Sprint 2 resolverá desde workflow YAMLs"
+  };
+}
+
+// =====================================================================
+// Persistence (localStorage — replaces SQLite for the artifact)
+// =====================================================================
+const LS_LOG = "aurora_bypass_log";
+const LS_BRIEFS = "aurora_briefs";
+const LS_PERSIST = "aurora_persist_bypasses";
+
+function uuid() { return crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(16).slice(2); }
+function nowIso() { return new Date().toISOString(); }
+function load(key, def) { try { return JSON.parse(localStorage.getItem(key)) || def; } catch { return def; } }
+function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+function logBypass(directive) {
+  const log = load(LS_LOG, []);
+  const entry = {
+    bypass_id: uuid(),
+    timestamp: nowIso(),
+    component_bypassed: directive.component,
+    reason: directive.reason,
+    scope: directive.scope,
+    revoke: directive.revoke,
+    operator_turn_text: directive.detected_in_text,
+    job_outcome: "pending"
+  };
+  // persist-scope handling
+  const persist = load(LS_PERSIST, {});
+  if (directive.scope === "persist" && directive.revoke) { delete persist[directive.component]; }
+  else if (directive.scope === "persist") { persist[directive.component] = directive.reason; }
+  save(LS_PERSIST, persist);
+  log.unshift(entry);
+  save(LS_LOG, log);
+  return entry.bypass_id;
+}
+
+// =====================================================================
+// UI wiring
+// =====================================================================
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("view-" + tab.dataset.view).classList.add("active");
+    if (tab.dataset.view === "log") renderLog();
+    if (tab.dataset.view === "brief") renderBriefs();
+  };
+});
+
+function esc(s) { return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+function runBypass() {
+  const text = document.getElementById("bypassText").value;
+  const out = document.getElementById("bypassOut");
+  const d = parseBypass(text);
+  if (!d) {
+    out.innerHTML = '<span class="pill muted">SIN BYPASS</span>\n\nNo se detectó directiva válida. Flujo normal — el gate aplica.';
+    return;
+  }
+  const id = logBypass(d);
+  const verb = d.revoke ? "REVOCADO" : "REGISTRADO";
+  out.innerHTML =
+    `<span class="pill ok">BYPASS ${verb}</span>\n\n` +
+    `componente : ${esc(d.component)}\n` +
+    `razón      : ${esc(d.reason)}\n` +
+    `scope      : ${esc(d.scope)}\n` +
+    `bypass_id  : ${esc(id)}\n\n` +
+    `[bypass usado: ${esc(d.component)} · razón registrada · outcome se logueará al cierre del job]`;
+}
+
+function runClassify() {
+  const text = document.getElementById("classifyText").value;
+  const r = classifyIntent(text);
+  document.getElementById("classifyOut").textContent = JSON.stringify(r, null, 2);
+}
+
+// Build gate checklist
+const gateState = new Set();
+function buildGateChecklist() {
+  const ul = document.getElementById("gateChecklist");
+  ul.innerHTML = "";
+  for (const [key, label] of GATE_COMPONENTS) {
+    const li = document.createElement("li");
+    const cb = document.createElement("input");
+    cb.type = "checkbox"; cb.id = "gate_" + key;
+    cb.onchange = () => { cb.checked ? gateState.add(key) : gateState.delete(key); };
+    const lab = document.createElement("label");
+    lab.style.margin = "0"; lab.style.color = "var(--text)"; lab.style.cursor = "pointer";
+    lab.htmlFor = cb.id; lab.textContent = label + "  (" + key + ")";
+    li.appendChild(cb); li.appendChild(lab);
+    ul.appendChild(li);
+  }
+}
+function fillGateDemo() {
+  for (const [key] of GATE_COMPONENTS) {
+    gateState.add(key);
+    const cb = document.getElementById("gate_" + key);
+    if (cb) cb.checked = true;
+  }
+}
+function runGate() {
+  const persist = load(LS_PERSIST, {});
+  const bypassed = persist["gate_preproduction_packet"] || persist["all"];
+  const r = validatePacket(gateState);
+  const out = document.getElementById("gateOut");
+  if (r.passed) {
+    out.innerHTML = '<span class="pill ok">PASSED</span>\n\nLos 12 componentes están presentes. Puedes proceder a generar prompts.';
+  } else if (bypassed) {
+    out.innerHTML =
+      `<span class="pill warn">FALLA — pero hay BYPASS activo</span>\n\n` +
+      `Faltan: ${r.missing.join(", ")}\n\n` +
+      `Bypass activo en gate_preproduction_packet (razón: ${esc(bypassed)}). Procede bajo soberanía del operador.`;
+  } else {
+    out.innerHTML =
+      `<span class="pill bad">BLOQUEADO</span>\n\n` +
+      `Faltan ${r.missing.length} componentes:\n  - ${r.missing.join("\n  - ")}\n\n` +
+      `Regla inviolable: no se generan prompts de video sin packet completo.\n` +
+      `Para saltar: en la pestaña Bypass escribe  OVERRIDE: gate_preproduction_packet - <razón>`;
+  }
+}
+
+function saveBrief() {
+  const brief = {
+    brief_id: uuid(),
+    created_at: nowIso(),
+    idea: document.getElementById("bIdea").value.trim(),
+    output_type: document.getElementById("bOutput").value,
+    duration_seconds: document.getElementById("bDuration").value.trim(),
+    visual_style: document.getElementById("bStyle").value.trim(),
+    script: document.getElementById("bScript").value.trim()
+  };
+  const out = document.getElementById("briefOut");
+  if (!brief.idea) {
+    out.innerHTML = '<span class="pill bad">ERROR</span>\n\nLa idea no puede estar vacía.';
+    return;
+  }
+  const briefs = load(LS_BRIEFS, []);
+  briefs.unshift(brief);
+  save(LS_BRIEFS, briefs);
+  out.innerHTML = `<span class="pill ok">GUARDADO</span>\n\nbrief_id: ${brief.brief_id}`;
+  ["bIdea","bDuration","bStyle","bScript"].forEach(id => document.getElementById(id).value = "");
+  renderBriefs();
+}
+function renderBriefs() {
+  const briefs = load(LS_BRIEFS, []);
+  const el = document.getElementById("briefList");
+  if (!briefs.length) { el.innerHTML = '<div class="empty">Aún no hay briefs.</div>'; return; }
+  let html = '<table><tr><th>Idea</th><th>Output</th><th>Dur.</th><th>Estilo</th><th>brief_id</th><th></th></tr>';
+  for (const b of briefs) {
+    html += `<tr><td>${esc(b.idea)}</td><td>${esc(b.output_type)}</td><td>${esc(b.duration_seconds||"")}</td>` +
+            `<td>${esc(b.visual_style||"")}</td><td class="mono">${esc((b.brief_id||"").slice(0,8))}…</td>` +
+            `<td><button class="tab" onclick="delBrief('${b.brief_id}')">✕</button></td></tr>`;
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+function delBrief(id) {
+  save(LS_BRIEFS, load(LS_BRIEFS, []).filter(b => b.brief_id !== id));
+  renderBriefs();
+}
+
+function renderLog() {
+  const log = load(LS_LOG, []);
+  const el = document.getElementById("logList");
+  if (!log.length) { el.innerHTML = '<div class="empty">Sin bypasses registrados.</div>'; return; }
+  let html = '<table><tr><th>Fecha</th><th>Componente</th><th>Razón</th><th>Scope</th></tr>';
+  for (const e of log) {
+    html += `<tr><td class="mono">${esc(e.timestamp.slice(0,19).replace("T"," "))}</td>` +
+            `<td class="mono">${esc(e.component_bypassed)}${e.revoke ? " (revoke)" : ""}</td>` +
+            `<td>${esc(e.reason)}</td><td>${esc(e.scope)}</td></tr>`;
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+function clearLog() {
+  if (confirm("¿Borrar todo el audit log de bypasses?")) { save(LS_LOG, []); save(LS_PERSIST, {}); renderLog(); }
+}
+
+buildGateChecklist();
+</script>
+</body>
+</html>

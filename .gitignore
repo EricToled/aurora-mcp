@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+aurora.db
+.aurora/
+*.egg-info/
+.pytest_cache/

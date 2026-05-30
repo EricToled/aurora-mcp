@@ -1,0 +1,34 @@
+# AURORA Biomechanical Motion Plan Template — Sprint 1
+# Blocks physically impossible motion before generation.
+shot_id: null                           # required uuid
+character_id: null                      # required uuid
+duration_seconds: 0                     # required float
+initial_pose:
+  body_position: ""                     # required
+  support_points: []                    # required list len >= 1
+  weight_distribution: ""               # required
+torso:
+  rotation_degrees: 0
+  lean_direction: ""
+  tension_level: ""                     # enum: relaxed|neutral|tense|max
+head:
+  direction: ""
+  gaze_target: ""
+  timing: ""                            # e.g. "0.0s-1.2s: forward; 1.2s+: down-left"
+arms_hands:
+  function: ""
+  position: ""
+  motion: ""
+legs:
+  angles: ""
+  support: ""
+  extension_flexion: ""
+center_of_mass_trajectory: ""
+object_in_motion:
+  trajectory_type: ""                   # enum: linear|arc|parabolic|irregular
+  speed_kph: 0.0
+  contact_points: []
+  arrival_height_from_ground_cm: 0
+physical_restrictions:
+  forbidden_movements: []
+  required_continuity: []

@@ -1,0 +1,25 @@
+# AURORA remote MCP server — Render blueprint.
+#
+# What this does: hosts AURORA's deterministic gate code on the internet so
+# it can be registered as a custom connector in your Claude account and used
+# from ANY session (Cowork or regular Claude). The code runs server-side, so
+# the gate behaves identically every time — that's the determinism you need.
+#
+# Deploy: push this repo to GitHub, then in Render -> New -> Blueprint, pick
+# the repo. Render reads this file and builds the Dockerfile automatically.
+# After deploy, your MCP URL is:  https://<service-name>.onrender.com/mcp
+services:
+  - type: web
+    name: aurora-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: AURORA_HTTP
+        value: "1"
+      - key: AURORA_DB_PATH
+        value: /data/aurora.db
+    disk:
+      name: aurora-data
+      mountPath: /data
+      sizeGB: 1
