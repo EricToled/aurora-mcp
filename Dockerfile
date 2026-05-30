@@ -15,6 +15,7 @@ COPY pyproject.toml ./
 COPY src ./src
 COPY schema ./schema
 COPY templates ./templates
+COPY platform_capabilities ./platform_capabilities
 RUN pip install --no-cache-dir -e .
 
 # SQLite audit DB path (ephemeral on free tier; override with a volume on paid).

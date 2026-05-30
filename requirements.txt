@@ -2,4 +2,5 @@ mcp==1.27.2
 pydantic>=2
 pyyaml
 httpx
+jinja2
 pytest
