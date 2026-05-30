@@ -171,3 +171,107 @@ class BiomechanicalMotionPlan(BaseModel):
 def to_jsonable(model: BaseModel) -> dict[str, Any]:
     """Convenience: dump a pydantic model to a plain JSON-serializable dict."""
     return model.model_dump(mode="json")
+
+
+# ===========================================================================
+# v2.1 FINAL models
+# ===========================================================================
+ProjectMode = Literal["image", "video_simple", "video_multishot"]
+ProjectScope = Literal["image", "video_simple", "video_multishot"]
+RouteType = Literal[
+    "mcp_callable", "ui_only", "hybrid", "not_verified", "outside_aurora"
+]
+VerificationSource = Literal[
+    "live_mcp", "ui_observed", "operator_reported", "manual_operator",
+    "public_docs", "inferred",
+]
+
+
+# ---------------------------------------------------------------------------
+# domain_session_lock.yaml (Sección 4 / 12.5)
+# ---------------------------------------------------------------------------
+class DomainSessionLock(BaseModel):
+    domain: str = Field(min_length=1)
+    sub_domain: str = Field(min_length=1)
+    project_scope: ProjectScope
+    allowed_content_boundary: str = "legal, ethical, model-acceptable"
+    visual_benchmarks: list[str] = Field(default_factory=list)
+    physical_rules: list[str] = Field(default_factory=list)
+    style_vocabulary: list[str] = Field(default_factory=list)
+    forbidden_cliches: list[str] = Field(default_factory=list)
+    common_failure_modes: list[str] = Field(default_factory=list)
+    required_success_criteria: list[str] = Field(default_factory=list)
+    locked_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# benchmark_pack.yaml (Sección 12.1)
+# ---------------------------------------------------------------------------
+class BenchmarkReference(BaseModel):
+    reference_id: str = ""
+    url_or_path: str = Field(min_length=1)
+    reason: str = ""
+    visual_traits: dict[str, Any] = Field(default_factory=dict)
+
+
+class BenchmarkPack(BaseModel):
+    project_id: Optional[str] = None
+    acceptance_threshold: int = 85
+    references: list[BenchmarkReference] = Field(min_length=1)
+    forbidden_traits: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# image_brief.yaml (Sección 12.6)
+# ---------------------------------------------------------------------------
+ImageType = Literal[
+    "genesis", "anchor", "product_hero", "character", "location", "prop",
+    "style_frame", "other",
+]
+
+
+class ImageModelRoute(BaseModel):
+    route_id: str = ""
+    model_id: str = ""
+    route_type: RouteType = "not_verified"
+
+
+class ImageBrief(BaseModel):
+    brief_id: Optional[str] = None
+    project_id: Optional[str] = None
+    operator_intent: str = Field(min_length=1)
+    image_type: ImageType
+    output_type: str = "other"
+    subject: str = ""
+    brand_or_product: str = ""
+    format: dict[str, Any] = Field(default_factory=dict)
+    visual_style: dict[str, Any] = Field(default_factory=dict)
+    reference_strategy: dict[str, Any] = Field(default_factory=dict)
+    model_route: ImageModelRoute = Field(default_factory=ImageModelRoute)
+    success_criteria: list[str] = Field(default_factory=list)
+    negative_constraints: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Route verification (Sección 7.4)
+# ---------------------------------------------------------------------------
+class RouteRegistration(BaseModel):
+    route_id: str = ""
+    feature_name: str = Field(min_length=1)
+    route_type: RouteType
+    verification_source: Optional[VerificationSource] = None
+    confidence: float = 0.0
+    allowed: bool = True
+    notes: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Generic gate result
+# ---------------------------------------------------------------------------
+class GateResult(BaseModel):
+    gate: str
+    passed: bool
+    score: Optional[float] = None
+    blocking: bool = True
+    reasons: list[str] = Field(default_factory=list)
+    notes: str = ""

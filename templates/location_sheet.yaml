@@ -1,0 +1,20 @@
+location_id: null
+project_id: null
+higgsfield_element_id: ""
+element_tag: ""
+name: ""
+layout: ""
+depth_layers:
+  - foreground
+  - midground
+  - background
+fixed_elements: []
+lighting_direction: ""
+unchangeable_objects: []
+soundscape: ""
+camera_paths_allowed: []
+camera_paths_forbidden: []
+quality_requirements:
+  spatial_continuity_min: 85
+  lighting_continuity_min: 85
+  realism_min: 85

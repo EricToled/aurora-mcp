@@ -1,0 +1,219 @@
+# Execution Pack — {{ project.project_id }}
+
+Generado: {{ now }}
+Versión del pack: {{ pack.version }}
+Modo: {{ project.mode }}
+Ruta general: {{ route_summary }}
+
+---
+
+## 1. Resumen ejecutivo
+
+- Intención: {{ project.operator_intent }}
+- Output type: {{ project.output_type }}
+- Domain: {{ domain_lock.domain }}
+- Sub-domain: {{ domain_lock.sub_domain }}
+- Higgsfield-contained: {{ route_policy.higgsfield_only }}
+- Production Success Probability: {{ production_success_probability.total_score }}/100
+- Estado: {% if production_success_probability.total_score >= 85 %}READY{% else %}BLOCKED{% endif %}
+
+## 2. Estado de gates
+
+| Gate | Status | Score | Notes |
+|---|---:|---:|---|
+{% for gate in gates %}| {{ gate.name }} | {{ gate.status }} | {{ gate.score or "—" }} | {{ gate.notes or "" }} |
+{% endfor %}
+
+{% if blocking_gates %}
+### Blocking gates
+{% for gate in blocking_gates %}- {{ gate.name }}: {{ gate.reason }}
+{% endfor %}
+{% endif %}
+
+## 3. Domain Session Lock
+
+```yaml
+{{ domain_lock_yaml }}
+```
+
+## 4. Benchmarks usados
+
+{% for ref in benchmark_refs %}
+### Benchmark {{ loop.index }} — {{ ref.reference_id }}
+- URL/path: {{ ref.url_or_path }}
+- Reason: {{ ref.reason }}
+- Visual traits: {{ ref.visual_traits }}
+{% endfor %}
+
+## 5. Elementos Higgsfield requeridos
+
+| Element | Category | Higgsfield ID | URL | Audit | Score |
+|---|---|---|---|---|---:|
+{% for element in elements %}| {{ element.name }} | {{ element.category }} | `{{ element.higgsfield_element_id }}` | {{ element.url or "—" }} | {{ element.audit_status }} | {{ element.quality_score or "—" }} |
+{% endfor %}
+
+## 6. Route verification
+
+| Feature | Route type | Verification source | Confidence | Allowed |
+|---|---|---|---:|---|
+{% for route in routes %}| {{ route.feature_name }} | {{ route.route_type }} | {{ route.verification_source }} | {{ route.confidence }} | {{ route.allowed }} |
+{% endfor %}
+
+## 7. Global Cinema Studio UI setup cuando aplique
+
+{% if global_ui_config %}
+| Control | Value |
+|---|---|
+| UI/Product | {{ global_ui_config.ui_product_name }} |
+| Genre | {{ global_ui_config.genre }} |
+| Style palette | {{ global_ui_config.style_palette }} |
+| Camera body | {{ global_ui_config.camera_body }} |
+| Aspect ratio | {{ global_ui_config.aspect_ratio }} |
+| Resolution | {{ global_ui_config.resolution }} |
+| Audio | {{ global_ui_config.audio }} |
+{% else %}
+No global UI setup required for this route.
+{% endif %}
+
+## 8. Shot list / Execution instructions
+
+{% for shot in shots %}
+### Shot {{ shot.shot_number }} — {{ shot.function }}
+
+**Route:** {{ shot.route_id }}
+**Route type:** {{ shot.route_type }}
+**Duration:** {{ shot.duration_seconds }}s
+**Shot type:** {{ shot.shot_type }}
+
+#### UI config panel por panel
+
+| Control | Value |
+|---|---|
+| Model / UI route | {{ shot.ui_config.route_id }} |
+| Genre | {{ shot.ui_config.genre }} |
+| Style palette | {{ shot.ui_config.style_palette }} |
+| Camera moveset | {{ shot.ui_config.camera_moveset }} |
+| Speed ramp | {{ shot.ui_config.speed_ramp }} |
+| Resolution | {{ shot.ui_config.resolution }} |
+| Audio | {{ shot.ui_config.audio }} |
+| Duration | {{ shot.ui_config.duration_seconds }}s |
+
+#### MCP payload cuando aplique
+
+{% if shot.mcp_payload %}
+```json
+{{ shot.mcp_payload_json }}
+```
+{% else %}
+No MCP payload. Execute manually in UI following the panel config.
+{% endif %}
+
+#### Anchors / References
+
+- FF: {{ shot.anchor_strategy.ff_higgsfield_element_id or "—" }}
+- LF: {{ shot.anchor_strategy.lf_higgsfield_element_id or "—" }}
+- Character: {{ shot.anchor_strategy.character_higgsfield_element_id or "—" }}
+- Prop: {{ shot.anchor_strategy.prop_higgsfield_element_id or "—" }}
+- Product: {{ shot.anchor_strategy.product_higgsfield_element_id or "—" }}
+- Location: {{ shot.anchor_strategy.location_higgsfield_element_id or "—" }}
+- Previous clip reference: {{ shot.anchor_strategy.previous_clip_ref or "—" }}
+- Reference injection syntax: {{ shot.anchor_strategy.reference_injection.inject_syntax or "—" }}
+
+#### MCSLA breakdown
+
+- Model: {{ shot.mcsla.model }}
+- Camera: {{ shot.mcsla.camera }}
+- Subject: {{ shot.mcsla.subject | join(", ") }}
+- Look: {{ shot.mcsla.look }}
+- Action: {{ shot.mcsla.action }}
+
+#### PROMPT FINAL — copiar tal cual
+
+```text
+{{ shot.prompt_final }}
+```
+
+#### Biomechanical plan
+
+```yaml
+{{ shot.biomechanical_yaml }}
+```
+
+#### Negative constraints
+
+{% for c in shot.negative_constraints %}- {{ c }}
+{% endfor %}
+
+#### Continuity instructions
+
+{% if shot.continuity.use_previous_clip_last_seconds %}
+- Extract last {{ shot.continuity.use_previous_clip_last_seconds }} seconds from Shot {{ shot.continuity.previous_shot_number }}.
+- Upload as reference media for this shot.
+{% elif shot.continuity.continuity_ref_type != "none" %}
+- Use continuity ref type: {{ shot.continuity.continuity_ref_type }}.
+{% else %}
+- No continuity reference required.
+{% endif %}
+
+#### Acceptance criteria for this shot
+
+- Prompt Fitness >= {{ shot.expected_scores.prompt_fitness_min }}
+- Biomechanics >= {{ shot.expected_scores.biomechanics_min }}
+- Continuity readiness >= {{ shot.expected_scores.continuity_readiness_min }}
+
+#### Recovery plan if shot fails
+
+1. Identify the failed metric.
+2. Change only one variable.
+3. If anatomy/geometry fails, use reference stacking with the defect screenshot.
+4. If route/schema fails, run emergency refresh.
+5. If quality score remains under threshold after approved iterations, block and report.
+
+---
+{% endfor %}
+
+## 9. Post-production / Finishing
+
+```yaml
+{{ post_production_yaml }}
+```
+
+## 10. Checklist de ejecución
+
+### Pre-producción
+- [ ] Domain Session Lock aprobado
+- [ ] Benchmark Pack aprobado
+- [ ] Light refresh completado
+- [ ] Route verification completado
+- [ ] Gate 0 Quality Ceiling aprobado
+- [ ] Anchors auditados
+
+### Producción
+{% for shot in shots %}- [ ] Shot {{ shot.shot_number }} generado, auditado y descargado
+{% endfor %}
+
+### Post
+- [ ] Stitch externo si aplica
+- [ ] Audio cleanup si aplica
+- [ ] Upscale/Topaz según route status
+- [ ] Final audit
+
+## 11. Success criteria
+
+{% for sc in success_criteria %}- {{ sc }}
+{% endfor %}
+
+## 12. Bypass log aplicado
+
+{% if bypasses %}
+{% for bypass in bypasses %}- {{ bypass.component_bypassed }} — {{ bypass.reason }} — {{ bypass.scope }}
+{% endfor %}
+{% else %}
+No bypasses applied.
+{% endif %}
+
+---
+
+Pack ID: `{{ pack.pack_id }}`
+Project ID: `{{ project.project_id }}`
+Generated by AURORA

@@ -1,0 +1,35 @@
+character_id: null
+project_id: null
+higgsfield_element_id: ""
+element_tag: ""
+name: ""
+creation_mode: "soul_cast|soul_id|element_only|reference_anchor"
+soul_cast:
+  budget_tier: "indie_5M|mid_25M|studio_100M|tentpole_300M"
+  era: ""
+  archetype: "hero|outlaw|magician|everyman|lover|jester|caregiver|creator|ruler|sage|explorer|innocent"
+  wardrobe_brief: ""
+soul_id:
+  source_person_name: ""
+  source_person_consent_confirmed: false
+  photos_curated_count: 0
+  photos_quality_checklist:
+    recent_within_12_months: false
+    no_glasses: false
+    no_hats: false
+    well_lit: false
+    multiple_angles: false
+    full_body_shots_included: false
+  trained_soul_id_higgsfield: ""
+identity_summary: ""
+physical_description: ""
+wardrobe: ""
+emotional_range: []
+voice_profile: null
+face_drift_policy:
+  first_shot_with_detailed_face: null
+  subsequent_shots_mode: "profile_only|back_or_obscured|extreme_close|face_allowed"
+quality_requirements:
+  identity_lock_min: 85
+  anatomy_min: 85
+  artifact_absence_min: 85

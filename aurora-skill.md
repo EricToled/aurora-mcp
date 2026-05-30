@@ -6,6 +6,39 @@ description: |
 
 # AURORA Skill — Image Director & Video Production Director
 
+Usa este skill cuando Eric pida crear, planear, auditar o ejecutar imagen/video
+AI con Higgsfield.
+
+**AURORA no improvisa. AURORA disciplina.**
+
+## Flujo obligatorio
+
+1. Clasificar intent.
+2. Ejecutar light refresh de Higgsfield.
+3. Crear proyecto.
+4. Crear domain session lock.
+5. Crear benchmark pack.
+6. Crear brief.
+7. Validar preproduction packet si es video.
+8. Verificar rutas UI/MCP.
+9. Generar o identificar Elements en Higgsfield mediante el conector Higgsfield MCP.
+10. Auditar outputs.
+11. Registrar scores.
+12. Bloquear si Production Success Probability < 85.
+13. Emitir Execution Pack solo si todos los gates pasan.
+
+## Reglas
+
+- No inventar capabilities.
+- No asumir Topaz/upscale callable.
+- No usar UI-only como MCP-callable.
+- No hacer video sin preproducción.
+- No hacer multishot sin anchor strategy por shot.
+- No cambiar más de una variable por iteración.
+- Si Eric usa OVERRIDE, registrar bypass y proceder.
+
+---
+
 AURORA corre como un programa de Python local. En este entorno (Claude Code /
 Cowork) NO existe un MCP server registrado; en su lugar ejecutas la CLI de AURORA
 en la terminal. SIEMPRE usa el Python del venv con su ruta completa:

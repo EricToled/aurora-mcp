@@ -1,0 +1,38 @@
+scene_id: null
+project_id: null
+scene_summary: ""
+genre: ""
+genre_physics_implications: ""
+style_palette: ""
+custom_color_grading: null
+emotion_injection:
+  - character_tag: ""
+    emotion: ""
+    intensity_0_100: 0
+camera_rack:
+  body: "Modular 8K"
+  focal_mm: 50
+  aperture_f: 2.8
+  aspect_ratio: "16:9"
+  sensor_grain: "minimal"
+  bokeh_quality: "high"
+location:
+  higgsfield_element_id: ""
+  element_tag: ""
+  location_summary: ""
+  time_of_day: ""
+  atmosphere: ""
+  weather: null
+lighting:
+  key:
+    direction: ""
+    color_temp_kelvin: 0
+    intensity: ""
+  fill: ""
+  rim: ""
+  ambient: ""
+continuity_rules:
+  fixed_elements: []
+  unchangeable_objects: []
+  color_continuity: ""
+  lighting_continuity: ""

@@ -12,15 +12,23 @@ EXPECTED_TABLES = {
     "jobs",
     "workflows_cache",
     "bypass_log",
+    "briefs",
+    "benchmark_refs",
+    "route_registry",
+    "capability_snapshots",
+    "audit_log",
+    "quality_scores",
+    "execution_packs",
+    "active_bypasses",
 }
 
 
-def test_init_db_creates_8_tables(tmp_path):
+def test_init_db_creates_v21_schema(tmp_path):
     db_path = tmp_path / "test.db"
     tables = db.init_db(db_path)
-    # init_db must yield exactly the 8 spec tables (no companion briefs table).
+    # init_db must yield the full v2.1 schema (16 tables).
     assert set(tables) == EXPECTED_TABLES
-    assert len(tables) == 8
+    assert len(tables) == 16
 
 
 def test_insert_brief_roundtrip(tmp_path):

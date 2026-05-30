@@ -1,0 +1,21 @@
+project_id: null
+benchmark_pack_id: null
+acceptance_threshold: 85
+references:
+  - reference_id: ""
+    url_or_path: ""
+    reason: ""
+    visual_traits:
+      lighting: ""
+      lens: ""
+      color_grade: ""
+      realism_level: ""
+      composition: ""
+      production_value: ""
+forbidden_traits:
+  - cartoon
+  - CGI look
+  - plastic skin
+  - fake lighting
+  - warped anatomy
+  - generic AI ad look

@@ -1,0 +1,26 @@
+# AURORA Elements Registry — documentation and audit metadata only.
+# Real media lives in Higgsfield native Elements.
+
+naming_convention: "@EntityType_Identifier in PascalCase or snake_case"
+allowed_element_types:
+  - character
+  - product
+  - prop
+  - environment
+  - style
+  - frame
+  - video_ref
+rules:
+  - "Do not duplicate visual identity outside Higgsfield."
+  - "Store only higgsfield_element_id, tag, category, audit status and quality scores."
+  - "Use <<<element_id>>> only when live refresh confirms model support."
+  - "Use soul_id for Soul models when Element injection is not supported."
+fields_stored_by_aurora:
+  - higgsfield_element_id
+  - element_tag
+  - category
+  - project_id
+  - audit_status
+  - quality_score
+  - usage_role
+  - created_at

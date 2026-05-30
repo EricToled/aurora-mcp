@@ -1,0 +1,23 @@
+product_id: null
+project_id: null
+higgsfield_element_id: ""
+element_tag: ""
+name: ""
+brand: ""
+form_factor: ""
+colors:
+  primary: ""
+  secondary: ""
+  accent: ""
+textures_materials: []
+size:
+  dimensions: ""
+  scale_reference: ""
+labels_logos: ""
+allowed_camera_angles: []
+forbidden_deformations: []
+brand_safety_constraints: []
+quality_requirements:
+  material_fidelity_min: 85
+  brand_fidelity_min: 85
+  geometry_min: 85

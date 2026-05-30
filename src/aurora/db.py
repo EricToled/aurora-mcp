@@ -1,8 +1,9 @@
-"""SQLite helpers for AURORA Sprint 1.
+"""SQLite helpers for AURORA v2.1 FINAL.
 
-Briefs are stored verbatim as JSON in a lightweight companion ``briefs`` table
-(created lazily here) so create/fetch round-trips preserve every field. The
-8 schema tables come from schema/aurora_schema.sql.
+The canonical schema (schema/aurora_schema.sql) holds the v2.1 FINAL tables
+(Sección 8) plus the original Sprint 1 tables. ``migrate_db`` upgrades an
+already-deployed database in place by adding any missing columns, so the live
+Render instance keeps working without a destructive rebuild.
 """
 from __future__ import annotations
 
@@ -17,15 +18,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = REPO_ROOT / "aurora.db"
 SCHEMA_PATH = REPO_ROOT / "schema" / "aurora_schema.sql"
 
-# A small companion table for full brief round-trips (Sprint 1).
-_BRIEFS_DDL = """
-CREATE TABLE IF NOT EXISTS briefs (
-  brief_id TEXT PRIMARY KEY,
-  project_id TEXT,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  brief_json TEXT NOT NULL
-);
-"""
+# Columns added to pre-existing tables by migrate_db (table -> [(col, ddl)]).
+_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "projects": [
+        ("output_type", "output_type TEXT"),
+        ("current_phase", "current_phase TEXT"),
+        ("domain_session_lock_json", "domain_session_lock_json TEXT"),
+        ("required_higgsfield_element_ids", "required_higgsfield_element_ids TEXT"),
+    ],
+    "briefs": [
+        ("brief_type", "brief_type TEXT"),
+        ("validated_at", "validated_at TIMESTAMP"),
+        ("gate_result_json", "gate_result_json TEXT"),
+    ],
+    "elements": [
+        ("higgsfield_element_id", "higgsfield_element_id TEXT"),
+        ("audit_status", "audit_status TEXT"),
+        ("quality_score", "quality_score INTEGER"),
+        ("usage_role", "usage_role TEXT"),
+    ],
+}
 
 
 def _now_iso() -> str:
@@ -33,85 +45,50 @@ def _now_iso() -> str:
 
 
 def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
-    """Open a connection with row access by name.
-
-    Sprint 1 trade-off: foreign keys are left OFF (sqlite default) so the
-    bypass audit trail can carry informational related_job_id values that may
-    reference jobs not yet persisted. The companion ``briefs`` table is created
-    lazily so brief round-trips work without bloating the 8-table schema.
-    """
+    """Open a connection with row access by name. Foreign keys stay OFF so the
+    audit trail can carry informational references to not-yet-persisted rows."""
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn
 
 
-def _ensure_briefs_table(conn: sqlite3.Connection) -> None:
-    """Create the lazy briefs companion table on first brief operation."""
-    conn.execute(_BRIEFS_DDL)
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {r[1] for r in rows}
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    """Idempotently add any columns missing from a pre-existing database."""
+    for table, cols in _MIGRATIONS.items():
+        if not _table_exists(conn, table):
+            continue
+        existing = _table_columns(conn, table)
+        for name, ddl in cols:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+    conn.commit()
 
 
 def init_db(db_path: Optional[str | Path] = None) -> list[str]:
-    """Apply the 8-table schema. Returns table names.
-
-    The companion ``briefs`` table is intentionally NOT created here; it is
-    created lazily by get_conn so init_db yields exactly the 8 spec tables.
-    """
+    """Apply the schema and run migrations. Returns table names."""
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    conn = sqlite3.connect(str(Path(db_path) if db_path else DEFAULT_DB_PATH))
+    conn = get_conn(db_path)
     try:
         conn.executescript(schema_sql)
         conn.commit()
+        migrate_db(conn)
         rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         ).fetchall()
         return [r[0] for r in rows]
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Briefs
-# ---------------------------------------------------------------------------
-def insert_brief(
-    brief: dict[str, Any],
-    db_path: Optional[str | Path] = None,
-    project_id: Optional[str] = None,
-) -> str:
-    """Persist a brief dict. Generates brief_id/created_at if absent. Returns id."""
-    brief = dict(brief)
-    brief_id = brief.get("brief_id") or str(uuid.uuid4())
-    brief["brief_id"] = brief_id
-    if not brief.get("created_at"):
-        brief["created_at"] = _now_iso()
-
-    conn = get_conn(db_path)
-    try:
-        _ensure_briefs_table(conn)
-        conn.execute(
-            "INSERT INTO briefs (brief_id, project_id, created_at, brief_json) "
-            "VALUES (?, ?, ?, ?)",
-            (brief_id, project_id, brief["created_at"], json.dumps(brief)),
-        )
-        conn.commit()
-        return brief_id
-    finally:
-        conn.close()
-
-
-def get_brief(
-    brief_id: str, db_path: Optional[str | Path] = None
-) -> Optional[dict[str, Any]]:
-    """Fetch a brief by id, returning the full brief dict or None."""
-    conn = get_conn(db_path)
-    try:
-        _ensure_briefs_table(conn)
-        row = conn.execute(
-            "SELECT brief_json FROM briefs WHERE brief_id = ?", (brief_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return json.loads(row["brief_json"])
     finally:
         conn.close()
 
@@ -125,14 +102,16 @@ def insert_project(
     db_path: Optional[str | Path] = None,
     project_id: Optional[str] = None,
     status: str = "open",
+    output_type: Optional[str] = None,
+    current_phase: Optional[str] = None,
 ) -> str:
     project_id = project_id or str(uuid.uuid4())
     conn = get_conn(db_path)
     try:
         conn.execute(
-            "INSERT INTO projects (project_id, operator_intent, mode, status) "
-            "VALUES (?, ?, ?, ?)",
-            (project_id, operator_intent, mode, status),
+            "INSERT INTO projects (project_id, operator_intent, mode, status, "
+            "output_type, current_phase) VALUES (?, ?, ?, ?, ?, ?)",
+            (project_id, operator_intent, mode, status, output_type, current_phase),
         )
         conn.commit()
         return project_id
@@ -140,8 +119,459 @@ def insert_project(
         conn.close()
 
 
+def get_project(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> Optional[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM projects WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+_PROJECT_UPDATABLE = {
+    "status",
+    "output_type",
+    "current_phase",
+    "domain_session_lock_json",
+    "required_higgsfield_element_ids",
+}
+
+
+def update_project(
+    project_id: str, db_path: Optional[str | Path] = None, **fields: Any
+) -> None:
+    """Update whitelisted project columns. JSON-encodes dict/list values."""
+    sets, params = [], []
+    for key, value in fields.items():
+        if key not in _PROJECT_UPDATABLE:
+            continue
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value)
+        sets.append(f"{key} = ?")
+        params.append(value)
+    if not sets:
+        return
+    params.append(project_id)
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            f"UPDATE projects SET {', '.join(sets)} WHERE project_id = ?", params
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
-# Shots
+# Briefs
+# ---------------------------------------------------------------------------
+def insert_brief(
+    brief: dict[str, Any],
+    db_path: Optional[str | Path] = None,
+    project_id: Optional[str] = None,
+    brief_type: Optional[str] = None,
+) -> str:
+    """Persist a brief dict verbatim. Returns brief_id."""
+    brief = dict(brief)
+    brief_id = brief.get("brief_id") or str(uuid.uuid4())
+    brief["brief_id"] = brief_id
+    if not brief.get("created_at"):
+        brief["created_at"] = _now_iso()
+    project_id = project_id or brief.get("project_id")
+
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO briefs (brief_id, project_id, created_at, brief_type, "
+            "brief_json) VALUES (?, ?, ?, ?, ?)",
+            (brief_id, project_id, brief["created_at"], brief_type, json.dumps(brief)),
+        )
+        conn.commit()
+        return brief_id
+    finally:
+        conn.close()
+
+
+def get_brief(
+    brief_id: str, db_path: Optional[str | Path] = None
+) -> Optional[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT brief_json FROM briefs WHERE brief_id = ?", (brief_id,)
+        ).fetchone()
+        return json.loads(row["brief_json"]) if row else None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Project artifacts (interim check results) — stored as typed brief rows so the
+# Execution Pack can later assemble its gate context from persisted state.
+# ---------------------------------------------------------------------------
+def put_artifact(
+    project_id: str,
+    kind: str,
+    data: Any,
+    db_path: Optional[str | Path] = None,
+) -> str:
+    """Persist an interim artifact (packet, motion_plan, prompt_packet, etc.)
+    as a typed brief row. Returns the artifact (brief) id."""
+    artifact_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO briefs (brief_id, project_id, created_at, brief_type, "
+            "brief_json) VALUES (?, ?, ?, ?, ?)",
+            (artifact_id, project_id, _now_iso(), f"artifact:{kind}", json.dumps(data)),
+        )
+        conn.commit()
+        return artifact_id
+    finally:
+        conn.close()
+
+
+def get_artifact(
+    project_id: str, kind: str, db_path: Optional[str | Path] = None
+) -> Optional[Any]:
+    """Read the most recent artifact of ``kind`` for a project, or None."""
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT brief_json FROM briefs WHERE project_id = ? AND brief_type = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (project_id, f"artifact:{kind}"),
+        ).fetchone()
+        return json.loads(row["brief_json"]) if row else None
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Benchmark refs
+# ---------------------------------------------------------------------------
+def insert_benchmark_ref(
+    project_id: str,
+    url_or_path: str,
+    visual_traits: dict[str, Any],
+    db_path: Optional[str | Path] = None,
+    benchmark_id: Optional[str] = None,
+) -> str:
+    benchmark_id = benchmark_id or str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO benchmark_refs (benchmark_id, project_id, url_or_path, "
+            "visual_traits_json) VALUES (?, ?, ?, ?)",
+            (benchmark_id, project_id, url_or_path, json.dumps(visual_traits)),
+        )
+        conn.commit()
+        return benchmark_id
+    finally:
+        conn.close()
+
+
+def get_benchmark_refs(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> list[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM benchmark_refs WHERE project_id = ? ORDER BY created_at",
+            (project_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["visual_traits"] = json.loads(d.pop("visual_traits_json"))
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Route registry
+# ---------------------------------------------------------------------------
+def insert_route(
+    project_id: Optional[str],
+    feature_name: str,
+    route_type: str,
+    route_data: dict[str, Any],
+    verification_source: Optional[str] = None,
+    confidence: float = 0.0,
+    db_path: Optional[str | Path] = None,
+    route_id: Optional[str] = None,
+) -> str:
+    route_id = route_id or route_data.get("route_id") or str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO route_registry (route_id, project_id, "
+            "feature_name, route_type, verification_source, verified_at, "
+            "confidence, route_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                route_id,
+                project_id,
+                feature_name,
+                route_type,
+                verification_source,
+                _now_iso() if verification_source else None,
+                confidence,
+                json.dumps(route_data),
+            ),
+        )
+        conn.commit()
+        return route_id
+    finally:
+        conn.close()
+
+
+def get_routes(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> list[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM route_registry WHERE project_id = ? OR project_id IS NULL",
+            (project_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["route"] = json.loads(d.pop("route_json"))
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Capability snapshots
+# ---------------------------------------------------------------------------
+def insert_capability_snapshot(
+    refresh_scope: str,
+    source: str,
+    snapshot: dict[str, Any],
+    diff_from_previous: Optional[dict[str, Any]] = None,
+    db_path: Optional[str | Path] = None,
+    snapshot_id: Optional[str] = None,
+) -> str:
+    snapshot_id = snapshot_id or str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO capability_snapshots (snapshot_id, refresh_scope, source, "
+            "snapshot_json, diff_from_previous_json) VALUES (?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                refresh_scope,
+                source,
+                json.dumps(snapshot),
+                json.dumps(diff_from_previous) if diff_from_previous else None,
+            ),
+        )
+        conn.commit()
+        return snapshot_id
+    finally:
+        conn.close()
+
+
+def get_latest_snapshot(
+    db_path: Optional[str | Path] = None,
+) -> Optional[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM capability_snapshots ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["snapshot"] = json.loads(d.pop("snapshot_json"))
+        if d.get("diff_from_previous_json"):
+            d["diff_from_previous"] = json.loads(d.pop("diff_from_previous_json"))
+        return d
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
+def insert_audit(
+    project_id: Optional[str],
+    criterion: str,
+    verdict: str,
+    notes: Optional[str],
+    audited_by: str,
+    higgsfield_job_id: Optional[str] = None,
+    higgsfield_element_id: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> str:
+    audit_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO audit_log (audit_id, project_id, higgsfield_job_id, "
+            "higgsfield_element_id, criterion, verdict, notes, audited_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                audit_id,
+                project_id,
+                higgsfield_job_id,
+                higgsfield_element_id,
+                criterion,
+                verdict,
+                notes,
+                audited_by,
+            ),
+        )
+        conn.commit()
+        return audit_id
+    finally:
+        conn.close()
+
+
+def get_audits(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> list[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM audit_log WHERE project_id = ? ORDER BY created_at",
+            (project_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Quality scores
+# ---------------------------------------------------------------------------
+def insert_quality_score(
+    project_id: str,
+    score_type: str,
+    score_data: dict[str, Any],
+    total_score: int,
+    scored_by: str = "aurora",
+    hard_fail_reason: Optional[str] = None,
+    higgsfield_job_id: Optional[str] = None,
+    higgsfield_element_id: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> str:
+    score_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO quality_scores (score_id, project_id, higgsfield_job_id, "
+            "higgsfield_element_id, score_type, score_json, total_score, "
+            "hard_fail_reason, scored_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                score_id,
+                project_id,
+                higgsfield_job_id,
+                higgsfield_element_id,
+                score_type,
+                json.dumps(score_data),
+                int(total_score),
+                hard_fail_reason,
+                scored_by,
+            ),
+        )
+        conn.commit()
+        return score_id
+    finally:
+        conn.close()
+
+
+def get_quality_scores(
+    project_id: str,
+    score_type: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> list[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        if score_type:
+            rows = conn.execute(
+                "SELECT * FROM quality_scores WHERE project_id = ? AND score_type = ? "
+                "ORDER BY created_at",
+                (project_id, score_type),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM quality_scores WHERE project_id = ? ORDER BY created_at",
+                (project_id,),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["score"] = json.loads(d.pop("score_json"))
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Execution packs
+# ---------------------------------------------------------------------------
+def insert_execution_pack(
+    project_id: str,
+    anchors_approved_count: int = 0,
+    anchors_required_count: int = 0,
+    success_criteria: Optional[list[str]] = None,
+    version: int = 1,
+    db_path: Optional[str | Path] = None,
+    pack_id: Optional[str] = None,
+) -> str:
+    pack_id = pack_id or str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO execution_packs (pack_id, project_id, version, "
+            "anchors_approved_count, anchors_required_count, success_criteria_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                pack_id,
+                project_id,
+                version,
+                anchors_approved_count,
+                anchors_required_count,
+                json.dumps(success_criteria or []),
+            ),
+        )
+        conn.commit()
+        return pack_id
+    finally:
+        conn.close()
+
+
+def get_execution_pack(
+    pack_id: str, db_path: Optional[str | Path] = None
+) -> Optional[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM execution_packs WHERE pack_id = ?", (pack_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("success_criteria_json"):
+            d["success_criteria"] = json.loads(d.pop("success_criteria_json"))
+        return d
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Shots (Sprint 1 compat)
 # ---------------------------------------------------------------------------
 def insert_shot(
     shot: dict[str, Any],
@@ -149,7 +579,6 @@ def insert_shot(
     db_path: Optional[str | Path] = None,
     shot_id: Optional[str] = None,
 ) -> str:
-    """Insert a shot. Complex fields are JSON-encoded. Returns shot_id."""
     shot_id = shot_id or shot.get("shot_id") or str(uuid.uuid4())
     conn = get_conn(db_path)
     try:
@@ -190,7 +619,6 @@ def insert_shot(
 def get_shots_for_project(
     project_id: str, db_path: Optional[str | Path] = None
 ) -> list[dict[str, Any]]:
-    """Return all shots for a project, JSON fields decoded, ordered by number."""
     conn = get_conn(db_path)
     try:
         rows = conn.execute(
@@ -215,7 +643,67 @@ def get_shots_for_project(
 
 
 # ---------------------------------------------------------------------------
-# Bypass log
+# Elements (Higgsfield element registry — metadata only)
+# ---------------------------------------------------------------------------
+def insert_element(
+    project_id: Optional[str],
+    element_type: str,
+    name: str,
+    sheet: dict[str, Any],
+    higgsfield_element_id: Optional[str] = None,
+    audit_status: Optional[str] = None,
+    quality_score: Optional[int] = None,
+    usage_role: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+    element_id: Optional[str] = None,
+) -> str:
+    element_id = element_id or str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO elements (element_id, project_id, element_type, name, "
+            "sheet_json, higgsfield_element_id, audit_status, quality_score, "
+            "usage_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                element_id,
+                project_id,
+                element_type,
+                name,
+                json.dumps(sheet),
+                higgsfield_element_id,
+                audit_status,
+                quality_score,
+                usage_role,
+            ),
+        )
+        conn.commit()
+        return element_id
+    finally:
+        conn.close()
+
+
+def get_elements(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> list[dict[str, Any]]:
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM elements WHERE project_id = ? ORDER BY created_at",
+            (project_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            if d.get("sheet_json"):
+                d["sheet"] = json.loads(d["sheet_json"])
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Bypass log + active bypasses
 # ---------------------------------------------------------------------------
 def insert_bypass_log(
     operator_turn_text: str,
@@ -227,7 +715,6 @@ def insert_bypass_log(
     related_job_id: Optional[str] = None,
     job_outcome: Optional[str] = None,
 ) -> str:
-    """Write a bypass entry. Returns the generated bypass_id."""
     bypass_id = str(uuid.uuid4())
     conn = get_conn(db_path)
     try:
@@ -264,5 +751,53 @@ def get_bypass_log(
             "SELECT * FROM bypass_log WHERE bypass_id = ?", (bypass_id,)
         ).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def set_active_bypass(
+    component: str,
+    scope: str,
+    reason: str,
+    project_id: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> None:
+    """Record/refresh a persist|all_session bypass as active (revoked_at=NULL)."""
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO active_bypasses (component, project_id, scope, reason, "
+            "created_at, revoked_at) VALUES (?, ?, ?, ?, ?, NULL) "
+            "ON CONFLICT(component) DO UPDATE SET scope=excluded.scope, "
+            "reason=excluded.reason, project_id=excluded.project_id, "
+            "created_at=excluded.created_at, revoked_at=NULL",
+            (component, project_id, scope, reason, _now_iso()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def revoke_active_bypass(component: str, db_path: Optional[str | Path] = None) -> None:
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "UPDATE active_bypasses SET revoked_at = ? WHERE component = ? "
+            "AND revoked_at IS NULL",
+            (_now_iso(), component),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_active_bypasses(db_path: Optional[str | Path] = None) -> dict[str, str]:
+    """Return {component: reason} for all non-revoked active bypasses."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT component, reason FROM active_bypasses WHERE revoked_at IS NULL"
+        ).fetchall()
+        return {r["component"]: r["reason"] for r in rows}
     finally:
         conn.close()

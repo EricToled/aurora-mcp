@@ -134,3 +134,16 @@ def validate_packet(packet: dict[str, Any]) -> ValidationResult:
         warnings=warnings,
         bypass_required_to_proceed=not passed,
     )
+
+
+def check(packet: dict[str, Any]):
+    """Uniform gate interface wrapper returning a GateResult."""
+    from ..models import GateResult
+
+    result = validate_packet(packet)
+    return GateResult(
+        gate="gate_preproduction_packet",
+        passed=result.passed,
+        reasons=[f"missing: {m}" for m in result.missing],
+        notes="; ".join(result.warnings),
+    )

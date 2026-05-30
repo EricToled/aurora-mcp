@@ -1,0 +1,216 @@
+# Higgsfield Platform Capabilities — operator-editable knowledge base.
+#
+# AURORA overlays this file on top of the spec-known DEFAULT_CAPABILITIES
+# (src/aurora/capability_refresh.py). Top-level keys here REPLACE the matching
+# default key wholesale, so any key listed below is a complete value.
+#
+# Refresh with: aurora_refresh_higgsfield_capabilities(scope="ui_partial"|"full_monthly")
+# Never treat UI controls as MCP-callable unless a live MCP schema exposes them.
+
+# --- Sección 5B.3 Model Alias Registry (superset of spec default) -------------
+model_alias_registry:
+  cinema_studio_3_5_ui:
+    label: "Cinema Studio 3.5"
+    status: ui_confirmed_mcp_pending
+    callable_when_ui: true
+    callable_when_mcp: false
+    current_mcp_equivalents:
+      - cinematic_studio_3_0
+      - cinematic_studio_video_v2
+    future_mcp_candidates:
+      - cinematic_studio_3_5
+      - cinema_studio_3_5
+      - cinematic_studio_video_3_5
+
+# --- Sección 5C.1 UI knowledge base update policy -----------------------------
+cinema_studio_ui_knowledge_base:
+  source_policy:
+    - "Use live UI observation when Eric provides screenshots or manual notes."
+    - "Do not treat UI controls as MCP-callable unless live MCP schema exposes them."
+    - "If UI labels change, preserve old label as alias and add new observed label."
+  verification:
+    status: ui_observed_or_operator_reported
+    source: ui_observed|operator_reported|public_docs|inferred
+    confidence: 0.0
+
+# --- Sección 5C.2 / 5C.3 / 5C.4 Cinema Studio UI controls ---------------------
+cinema_studio_ui:
+  genres:
+    action:
+      ui_labels: ["Action", "Acción"]
+      use_for: ["sports", "chase", "impact", "fast object motion"]
+      effects: "Kinetic camera, higher movement energy, sharper impact timing, stronger acceleration cues."
+      risk: "Can become video-game-like if overused."
+    drama:
+      ui_labels: ["Drama"]
+      use_for: ["human emotion", "character moments", "grounded realism"]
+      effects: "Controlled camera, restrained pacing, natural emotional emphasis."
+      risk: "Can become slow or flat if action is required."
+    comedy:
+      ui_labels: ["Comedy", "Comedia"]
+      use_for: ["light timing", "playful beats", "elastic reactions"]
+      effects: "Looser timing, expressive reactions, less severe lighting."
+      risk: "Can reduce premium/publicity feel."
+    horror:
+      ui_labels: ["Horror", "Terror"]
+      use_for: ["tension", "fear", "dark atmosphere"]
+      effects: "Unsettling camera, harder contrast, delayed reveals."
+      risk: "Usually wrong for clean advertising unless intentional."
+    noir:
+      ui_labels: ["Noir"]
+      use_for: ["mystery", "stylized shadows", "black-and-white or high contrast"]
+      effects: "Chiaroscuro lighting, slow camera, deep shadows."
+      risk: "Can harm product visibility."
+    documentary:
+      ui_labels: ["Documentary", "Documental"]
+      use_for: ["authenticity", "UGC premium", "real-world credibility"]
+      effects: "Handheld realism, natural imperfections, observational framing."
+      risk: "Can look under-produced if target is luxury commercial."
+    commercial:
+      ui_labels: ["Commercial", "Comercial"]
+      use_for: ["advertising", "brand films", "fitness/product/tourism campaigns"]
+      effects: "Polished lighting, clean subject hierarchy, brand-safe composition."
+      risk: "Can become generic if style palette is vague."
+    music_video:
+      ui_labels: ["Music Video", "Video musical"]
+      use_for: ["rhythmic motion", "performance", "stylized lighting"]
+      effects: "Beat-driven camera, expressive movement, stylized color."
+      risk: "Can reduce realism if too stylized."
+    sci_fi:
+      ui_labels: ["Sci-Fi", "Science Fiction", "Ciencia ficción"]
+      use_for: ["tech", "futuristic products", "advanced environments"]
+      effects: "High-tech atmosphere, light accents, speculative production design."
+      risk: "Can create CGI look."
+    epic:
+      ui_labels: ["Epic", "Épico", "Spectacle"]
+      use_for: ["large scale", "hero moments", "grand reveal", "high production value"]
+      effects: "Wider scale, grand camera motion, stronger atmosphere."
+      risk: "Can overinflate simple scenes."
+  speed_ramps:
+    linear:
+      ui_labels: ["Linear", "Lineal"]
+      behavior: "Constant real-time speed."
+      use_for: ["dialogue", "natural action", "baseline tests"]
+    slow_motion:
+      ui_labels: ["Slow Motion", "Slow-mo", "Slow Mo"]
+      behavior: "Fluid high-frame-rate slow motion."
+      use_for: ["product detail", "athletic impact", "dramatic reveal"]
+    impact:
+      ui_labels: ["Impact"]
+      behavior: "Builds speed into collision/contact, then emphasizes impact frame."
+      use_for: ["ball contact", "sports hit", "object collision"]
+      hard_rule: "Requires biomechanical/contact plan before use."
+    bullet_time:
+      ui_labels: ["Bullet Time"]
+      behavior: "Camera orbits or shifts around a slowed/frozen moment."
+      use_for: ["hero freeze", "stylized reveal"]
+      risk: "High CGI risk; use sparingly for advertising realism."
+    flash_in:
+      ui_labels: ["Flash In"]
+      behavior: "Fast acceleration into stable framing."
+      use_for: ["entrance", "object arrival", "transition into action"]
+    flash_out:
+      ui_labels: ["Flash Out"]
+      behavior: "Normal action transitions into rapid exit or deceleration."
+      use_for: ["object leaving frame", "scene exit", "transition out"]
+    ramp_up:
+      ui_labels: ["Ramp Up"]
+      behavior: "Progressive acceleration across the shot."
+      use_for: ["increasing intensity", "fitness effort", "sports build"]
+    auto:
+      ui_labels: ["Auto"]
+      behavior: "Delegated timing selection by UI/model."
+      use_for: ["first exploration only"]
+      warning: "Do not use for final pack unless no better explicit ramp exists."
+  camera_movesets:
+    classic_static:
+      ui_labels: ["Classic Static", "Static", "Tripod"]
+      behavior: "Locked-off camera."
+      use_for: ["product clarity", "controlled composition", "dialogue"]
+    silent_machine:
+      ui_labels: ["Silent Machine", "Dolly", "Rail"]
+      behavior: "Precise mechanical movement, controlled and smooth."
+      use_for: ["premium commercial", "product reveal", "fitness club walkthrough"]
+    one_take:
+      ui_labels: ["One Take", "Long Take"]
+      behavior: "Continuous fluid camera following action."
+      use_for: ["sequence continuity", "immersive action", "sports movement"]
+    intimate_observer:
+      ui_labels: ["Intimate Observer", "Handheld"]
+      behavior: "Subtle handheld close-quarters realism."
+      use_for: ["authenticity", "emotional character moment", "documentary feel"]
+    orbit_around:
+      ui_labels: ["Orbit", "Orbit Around"]
+      behavior: "Camera moves around subject in partial or full arc."
+      use_for: ["hero object", "character reveal", "impact emphasis"]
+    tilt_down:
+      ui_labels: ["Tilt Down"]
+      behavior: "Camera tilts downward from high to lower framing."
+      use_for: ["environment reveal", "object discovery", "top-to-subject reveal"]
+    epic_scale:
+      ui_labels: ["Epic Scale", "Impossible Camera"]
+      behavior: "Large-scale dynamic camera movement beyond normal rigging."
+      use_for: ["grand reveal", "large environment", "cinematic spectacle"]
+      risk: "May reduce realism if used for grounded ads."
+    auto:
+      ui_labels: ["Auto"]
+      behavior: "UI/model chooses movement."
+      use_for: ["drafting only"]
+      warning: "Avoid for final execution packs unless explicitly justified."
+  ui_config_validation_rule:
+    applies_when: ["ui_only", "hybrid"]
+    required_controls:
+      - genre
+      - speed_ramp
+      - camera_moveset
+      - style_palette
+      - duration_seconds
+      - aspect_ratio
+      - audio
+      - reference_strategy
+    on_missing: "gate_route_verification fails"
+
+# --- Sección 13B.1 Post-production knowledge base -----------------------------
+post_production:
+  stitching:
+    primary_tool: CapCut
+    alternative_tool: DaVinci Resolve
+    route: outside_aurora
+    default_rule: "straight cuts only; no crossfades unless intentionally specified"
+    ordering_rule: "Use shot_number order from shot_list.yaml"
+    export_notes:
+      - "Keep original frame rate unless a speed-ramp plan requires otherwise."
+      - "Do not add transitions that hide continuity failures."
+  audio_cleanup:
+    adobe_podcast:
+      route: outside_aurora
+      url: "https://podcast.adobe.com/"
+      default_settings:
+        music_pct: 0
+        background_pct: 100
+        speech_pct: 50
+      use_when:
+        - "native AI audio is inconsistent across shots"
+        - "dialogue/lip-sync needs cleanup"
+        - "background noise must be retained but controlled"
+      not_required_when:
+        - "image-only output"
+        - "silent video"
+        - "external music track fully replaces native audio"
+  upscale:
+    higgsfield_native_upscale:
+      route: ui_only_or_mcp_if_verified
+      rule: "Do not mark mcp_callable unless live refresh exposes an explicit tool."
+    topaz_inside_higgsfield:
+      route: ui_only_or_not_verified
+      rule: "Use only if current UI exposes it; do not assume MCP access."
+    topaz_external:
+      route: outside_aurora
+      suggested_models:
+        - Proteus
+        - Starlite Precise 2.5
+      rule: "Manual finishing outside AURORA."
+  image_finishing:
+    rule: "If image upscale is required, classify route as Higgsfield MCP callable, Higgsfield UI-only, or outside_aurora before execution."
+  video_finishing:
+    rule: "Prefer one final upscale after stitching rather than per-shot upscale, unless route-specific evidence says otherwise."

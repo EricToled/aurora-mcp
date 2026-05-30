@@ -1,0 +1,17 @@
+domain_session_lock_id: null
+project_id: null
+domain: ""
+sub_domain: ""
+project_scope: "image|video_simple|video_multishot"
+allowed_content_boundary: "legal, ethical, model-acceptable"
+visual_benchmarks: []
+physical_rules: []
+style_vocabulary: []
+forbidden_cliches: []
+common_failure_modes: []
+required_success_criteria: []
+route_constraints:
+  higgsfield_only: true
+  fallback_external: "outside_aurora_only"
+locked_at: null
+validated_at: null

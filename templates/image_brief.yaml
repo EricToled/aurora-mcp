@@ -1,0 +1,26 @@
+brief_id: null
+project_id: null
+operator_intent: ""
+image_type: "genesis|anchor|product_hero|character|location|prop|style_frame|other"
+output_type: "hero_asset|campaign_still|product_shot|editorial|ugc|other"
+subject: ""
+brand_or_product: ""
+format:
+  aspect_ratio: "1:1|4:5|16:9|9:16|21:9|custom"
+  target_resolution: "1K|2K|4K|custom"
+visual_style:
+  photography_style: ""
+  lighting: ""
+  lens: ""
+  color_grade: ""
+  production_value: "advertising-grade"
+reference_strategy:
+  uses_elements: false
+  element_ids: []
+  raw_refs_allowed: false
+model_route:
+  route_id: ""
+  model_id: ""
+  route_type: "mcp_callable|ui_only|hybrid|not_verified"
+success_criteria: []
+negative_constraints: []

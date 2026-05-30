@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2",
     "pyyaml",
     "httpx",
+    "jinja2",
 ]
 
 [project.optional-dependencies]

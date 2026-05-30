@@ -1,0 +1,18 @@
+prop_id: null
+project_id: null
+higgsfield_element_id: ""
+element_tag: ""
+name: ""
+function_in_scene: ""
+form: ""
+physics:
+  weight_kg: 0
+  material: ""
+  bounce_coefficient: 0
+  fragile_bool: false
+interaction_rules: []
+allowed_contact_points: []
+forbidden_interactions: []
+quality_requirements:
+  shape_consistency_min: 85
+  material_fidelity_min: 85

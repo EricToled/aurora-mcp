@@ -1,0 +1,21 @@
+anchor_strategy_id: null
+project_id: null
+case_type: "simple_start|start_and_end|open_end|multishot_per_shot|continuity_from_previous|dialogue_long|complex_scene"
+ff_higgsfield_element_id: null
+lf_higgsfield_element_id: null
+character_higgsfield_element_id: null
+prop_higgsfield_element_id: null
+product_higgsfield_element_id: null
+location_higgsfield_element_id: null
+style_higgsfield_element_id: null
+previous_clip_last_seconds_ref: null
+intermediate_screenshot_ref: null
+reference_injection:
+  mechanism: "element_id|start_image|end_image|video_ref|ui_upload|none"
+  inject_syntax: "<<<element_id>>>"
+  model_support_verified: false
+continuity_goal: ""
+validation:
+  anchors_required_count: 0
+  anchors_approved_count: 0
+  continuity_readiness_min: 85
