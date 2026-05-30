@@ -17,8 +17,8 @@ COPY schema ./schema
 COPY templates ./templates
 RUN pip install --no-cache-dir -e .
 
-# Persist the SQLite audit DB on a mounted volume in production.
-ENV AURORA_DB_PATH=/data/aurora.db
+# SQLite audit DB path (ephemeral on free tier; override with a volume on paid).
+ENV AURORA_DB_PATH=/app/aurora.db
 ENV AURORA_HTTP=1
 # Render/most PaaS inject PORT; default to 8000 for local docker run.
 ENV PORT=8000

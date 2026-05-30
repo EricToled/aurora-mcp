@@ -17,9 +17,8 @@ services:
     envVars:
       - key: AURORA_HTTP
         value: "1"
+      # Free tier has no persistent disk: keep the SQLite DB in the app dir.
+      # It is ephemeral (resets on redeploy/sleep). The gates stay
+      # deterministic; only bypass/brief history is not retained.
       - key: AURORA_DB_PATH
-        value: /data/aurora.db
-    disk:
-      name: aurora-data
-      mountPath: /data
-      sizeGB: 1
+        value: /app/aurora.db
