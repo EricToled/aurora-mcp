@@ -834,6 +834,25 @@ def revoke_active_bypass(component: str, db_path: Optional[str | Path] = None) -
         conn.close()
 
 
+def get_logged_bypasses_for_project(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> dict[str, str]:
+    """Return {component: reason} for current_turn bypasses logged against this
+    project. current_turn bypasses are not promoted to active_bypasses, so emit
+    reads them here to honor operator sovereignty within the project (bug #9)."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT component_bypassed, reason FROM bypass_log "
+            "WHERE project_id = ? AND scope = 'current_turn' "
+            "ORDER BY timestamp ASC, rowid ASC",
+            (project_id,),
+        ).fetchall()
+        return {r["component_bypassed"]: r["reason"] for r in rows}
+    finally:
+        conn.close()
+
+
 def get_active_bypasses(db_path: Optional[str | Path] = None) -> dict[str, str]:
     """Return {component: reason} for all non-revoked active bypasses."""
     conn = get_conn(db_path)
@@ -842,5 +861,72 @@ def get_active_bypasses(db_path: Optional[str | Path] = None) -> dict[str, str]:
             "SELECT component, reason FROM active_bypasses WHERE revoked_at IS NULL"
         ).fetchall()
         return {r["component"]: r["reason"] for r in rows}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Gate evaluations (persist-then-read; Sección 10)
+# ---------------------------------------------------------------------------
+def put_gate_evaluation(
+    project_id: str,
+    gate_name: str,
+    status: str,
+    score: Optional[int] = None,
+    reasons: Optional[list[str]] = None,
+    notes: Optional[str] = None,
+    packet: Any = None,
+    evaluator_version: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> str:
+    """Persist a gate verdict + the input snapshot that produced it. Returns id.
+
+    status must be one of pass|fail|warning (CHECK-enforced)."""
+    evaluation_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO gate_evaluations (evaluation_id, project_id, gate_name, "
+            "status, score, reasons_json, notes, packet_json, evaluator_version) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                evaluation_id,
+                project_id,
+                gate_name,
+                status,
+                int(score) if score is not None else None,
+                json.dumps(reasons or []),
+                notes,
+                json.dumps(packet) if packet is not None else None,
+                evaluator_version,
+            ),
+        )
+        conn.commit()
+        return evaluation_id
+    finally:
+        conn.close()
+
+
+def get_latest_gate_evaluations(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> dict[str, dict[str, Any]]:
+    """Return {gate_name: latest_evaluation_row} for a project (most recent per
+    gate_name). reasons_json/packet_json are decoded into reasons/packet."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM gate_evaluations WHERE project_id = ? "
+            "ORDER BY evaluated_at ASC, rowid ASC",
+            (project_id,),
+        ).fetchall()
+        latest: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            d = dict(r)
+            d["reasons"] = json.loads(d.get("reasons_json") or "[]")
+            d["packet"] = (
+                json.loads(d["packet_json"]) if d.get("packet_json") else None
+            )
+            latest[d["gate_name"]] = d  # later rows overwrite earlier -> newest wins
+        return latest
     finally:
         conn.close()

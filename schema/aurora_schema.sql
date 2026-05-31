@@ -113,6 +113,23 @@ CREATE TABLE IF NOT EXISTS active_bypasses (
   revoked_at TIMESTAMP
 );
 
+-- Persisted gate evaluations (Sección 10, persist-then-read). A validate_*/
+-- check_* tool records its verdict + the input snapshot here so that
+-- emit_execution_pack reads the recorded decision instead of re-evaluating a
+-- gate whose input was only ever held in memory (bugs #8/#10).
+CREATE TABLE IF NOT EXISTS gate_evaluations (
+  evaluation_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(project_id),
+  gate_name TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pass','fail','warning')),
+  score INTEGER,
+  reasons_json TEXT,
+  notes TEXT,
+  evaluated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  packet_json TEXT,
+  evaluator_version TEXT
+);
+
 -- ---------------------------------------------------------------------------
 -- Sprint 1 operational tables (kept for backward compatibility)
 -- ---------------------------------------------------------------------------
@@ -200,4 +217,5 @@ CREATE INDEX IF NOT EXISTS idx_packs_project ON execution_packs(project_id);
 CREATE INDEX IF NOT EXISTS idx_shots_project ON shots(project_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
 CREATE INDEX IF NOT EXISTS idx_bypass_project ON bypass_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_gate_eval_project ON gate_evaluations(project_id, gate_name);
 CREATE INDEX IF NOT EXISTS idx_workflows_domain ON workflows_cache(domain, sub_domain, style);

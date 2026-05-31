@@ -24,13 +24,31 @@ VALID_UPSCALE_ROUTES = {
 EXTERNAL_TOOLS = {"capcut", "davinci", "davinci resolve", "adobe podcast", "topaz"}
 
 
+# Actionable guidance emitted when a video project has no finishing route yet.
+NO_ROUTE_GUIDANCE = (
+    "no finishing route classified. Either mark the project as needing no "
+    "finishing — call aurora_skip_finishing(project_id='<id>') — or register a "
+    "route with aurora_propose_video_execution(..., video_packet={'finishing': "
+    "{'upscale_route': 'ui_only'|'outside_aurora'|'mcp_callable', 'tools': [...]}}). "
+    "Topaz/CapCut/DaVinci must be 'outside_aurora' unless a verified connector exists."
+)
+
+
 def check(finishing: dict[str, Any] | None) -> GateResult:
     reasons: list[str] = []
     if not isinstance(finishing, dict) or not finishing:
         return GateResult(
             gate="gate_upscale_finishing_route",
             passed=False,
-            reasons=["no finishing route classified"],
+            reasons=[NO_ROUTE_GUIDANCE],
+        )
+
+    # Explicit operator decision that this project needs no finishing pass.
+    if finishing.get("not_required"):
+        return GateResult(
+            gate="gate_upscale_finishing_route",
+            passed=True,
+            notes="finishing not required for this project",
         )
 
     upscale = finishing.get("upscale_route")

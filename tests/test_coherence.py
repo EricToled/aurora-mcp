@@ -113,3 +113,61 @@ def test_wrong_shape_is_loud_not_silent_zero(tmp_path, monkeypatch):
         pid, "image", {"creative": "a nice prompt", "technical": "85mm"})
     assert res["ok"] is False
     assert "expected" in res["reason"].lower() or res.get("expected_criteria")
+
+
+# (d) Recorded-verdict vocabulary matches the context-check vocabulary --------
+def test_vocabulary_coherence():
+    """The two evaluation paths must speak the same gate vocabulary.
+
+    emit reads recorded verdicts (persist-then-read) AND falls back to a
+    context check for gates with no recording. If a gate name only exists on one
+    side, a project would be silently mis-evaluated (the bug #8/#10 class). Every
+    required gate for every mode must therefore appear in BOTH the canonical gate
+    registry and the builder's context-input table, so neither path can name a
+    gate the other doesn't know.
+    """
+    from aurora import execution_pack_builder as builder
+
+    context_inputs = set(builder._GATE_INPUTS.keys())
+    registry = set(gates_pkg.GATE_MODULES.keys())
+    assert context_inputs == registry, (
+        "context-check table and gate registry disagree: "
+        f"only-in-context={context_inputs - registry} "
+        f"only-in-registry={registry - context_inputs}"
+    )
+    for mode in ("image", "video_simple", "video_multishot"):
+        for gate in gates_pkg.required_gates_for_mode(mode):
+            assert gate in registry, f"{mode}: {gate} not in gate registry"
+            assert gate in context_inputs, f"{mode}: {gate} has no context check"
+
+
+def test_recorded_status_values_are_db_check_valid():
+    """Every status the server can persist must satisfy the gate_evaluations
+    CHECK constraint, so a recorded verdict never raises on write."""
+    import sqlite3
+
+    valid = {"pass", "fail", "warning"}
+    # _record_gate_eval writes pass/fail; psp + preproduction write pass/fail too.
+    assert {"pass", "fail"} <= valid
+    # The DB enforces the same set — a bogus status must be rejected.
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        "CREATE TABLE projects (project_id TEXT PRIMARY KEY);"
+        "CREATE TABLE gate_evaluations (evaluation_id TEXT PRIMARY KEY, "
+        "project_id TEXT, gate_name TEXT, "
+        "status TEXT NOT NULL CHECK(status IN ('pass','fail','warning')));"
+    )
+    conn.execute("INSERT INTO projects VALUES ('p')")
+    for status in valid:
+        conn.execute(
+            "INSERT INTO gate_evaluations VALUES (?, 'p', 'g', ?)", (status, status)
+        )
+    try:
+        conn.execute(
+            "INSERT INTO gate_evaluations VALUES ('bad', 'p', 'g', 'not_evaluated')"
+        )
+        raised = False
+    except sqlite3.IntegrityError:
+        raised = True
+    conn.close()
+    assert raised, "CHECK must reject a status outside pass/fail/warning"

@@ -83,10 +83,18 @@ def evaluate_gates(
     context: dict[str, Any],
     mode: str,
     active_bypasses: Optional[dict[str, str]] = None,
+    recorded: Optional[dict[str, dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Run every required gate for the mode. A failing gate blocks unless an
-    active bypass names it. Returns gate rows + the list of true blockers."""
+    active bypass names it. Returns gate rows + the list of true blockers.
+
+    Persist-then-read: when ``recorded`` carries a stored evaluation for a gate
+    (written by its validate_*/check_* tool), that verdict is authoritative and
+    the gate is NOT re-evaluated from context. Gates with no recorded evaluation
+    fall back to the in-context check, so a project that recorded nothing still
+    gets evaluated exactly as before (no regression to the simple path)."""
     active_bypasses = active_bypasses or {}
+    recorded = recorded or {}
     # An "all" bypass (BYPASS AURORA) covers every gate — operator sovereignty.
     bypass_all = active_bypasses.get("all")
     required = gates_pkg.required_gates_for_mode(mode)
@@ -95,27 +103,41 @@ def evaluate_gates(
     bypassed: list[dict[str, Any]] = []
 
     for name in required:
-        runner = _GATE_INPUTS.get(name)
-        if runner is None:
-            continue
-        result = runner(context)
+        rec = recorded.get(name)
+        if rec is not None:
+            passed = rec.get("status") in ("pass", "warning")
+            score = rec.get("score")
+            reasons = list(rec.get("reasons") or [])
+            if not passed and not reasons:
+                reasons = [rec.get("notes") or "recorded fail"]
+            notes = rec.get("notes") or "; ".join(reasons)
+        else:
+            runner = _GATE_INPUTS.get(name)
+            if runner is None:
+                continue
+            result = runner(context)
+            passed = result.passed
+            score = result.score
+            reasons = list(result.reasons)
+            notes = result.notes or "; ".join(result.reasons)
+
         bypass_reason = active_bypasses.get(name)
         if bypass_reason is None and bypass_all is not None:
             bypass_reason = f"BYPASS AURORA: {bypass_all}"
-        if result.passed:
+        if passed:
             status = "pass"
         elif bypass_reason is not None:
             status = "bypassed"
             bypassed.append({"name": name, "reason": bypass_reason})
         else:
             status = "fail"
-            blocking.append({"name": name, "reason": "; ".join(result.reasons) or "blocked"})
+            blocking.append({"name": name, "reason": "; ".join(reasons) or "blocked"})
         rows.append(
             {
                 "name": name,
                 "status": status,
-                "score": result.score,
-                "notes": result.notes or "; ".join(result.reasons),
+                "score": score,
+                "notes": notes,
             }
         )
 
@@ -149,13 +171,14 @@ def build_execution_pack(
     active_bypasses: Optional[dict[str, str]] = None,
     pack_id: Optional[str] = None,
     pack_version: str = "1",
+    recorded: Optional[dict[str, dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Gate-guard then render the Execution Pack.
 
     Returns {ok, blocked, gate_evaluation, markdown}. ``markdown`` is None when
     blocked (a gate failed with no registered bypass).
     """
-    evaluation = evaluate_gates(context, mode, active_bypasses)
+    evaluation = evaluate_gates(context, mode, active_bypasses, recorded=recorded)
     if not evaluation["all_clear"]:
         return {
             "ok": False,

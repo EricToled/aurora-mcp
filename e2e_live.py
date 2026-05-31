@@ -56,6 +56,52 @@ MOTION_PLAN = {
     "scores": BIOMECH_SCORES,
 }
 
+# A rich operator prompt packet (no rubric scores) — exercises the bug #7 path.
+PROMPT_PACKET_RICH = {
+    "model": "higgsfield_video_v1",
+    "prompt_final": "A string quartet plays Vivaldi in a candlelit baroque hall.",
+    "action": "the quartet plays in unison",
+    "subject": ["@violinist_soul", "@cellist_soul"],
+    "camera": {"body": "ARRI", "focal_mm": 50, "movement": "slow dolly",
+               "aspect_ratio": "16:9"},
+    "biomechanical_motion_plan_id": "mp-1",
+    "look": "warm baroque chiaroscuro",
+    "negative_constraints": ["no modern clothing", "no electric light", "no extra fingers"],
+    "contradictions": [],
+}
+
+# A 3-shot multishot list satisfying BOTH the anchor and continuity gates.
+MULTISHOT_SHOTS = [
+    {"shot_number": 1, "duration_seconds": 5, "shot_type": "establishing",
+     "anchor_strategy": {"case_type": "simple_start",
+                         "ff_higgsfield_element_id": "elem-quartet-ff"},
+     "continuity": {"continuity_ref_type": "none"}},
+    {"shot_number": 2, "duration_seconds": 5, "shot_type": "closeup",
+     "anchor_strategy": {"case_type": "continuity_from_previous",
+                         "previous_clip_ref": "shot-1-clip",
+                         "character_higgsfield_element_id": "elem-violinist"},
+     "continuity": {"continuity_ref_type": "last_frame"}},
+    {"shot_number": 3, "duration_seconds": 5, "shot_type": "wide",
+     "anchor_strategy": {"case_type": "continuity_from_previous",
+                         "previous_clip_ref": "shot-2-clip",
+                         "location_higgsfield_element_id": "elem-hall"},
+     "continuity": {"continuity_ref_type": "last_5s"}},
+]
+MULTISHOT_PACKET = {
+    "idea": "A string quartet performs Vivaldi's Four Seasons in a baroque hall.",
+    "script": {"beats": ["tuning", "allegro", "adagio", "finale"]},
+    "shot_list": MULTISHOT_SHOTS,
+    "characters": [{"name": "violinist", "soul_id": "elem-violinist"}],
+    "location": {"name": "candlelit baroque concert hall"},
+    "props_or_product": [{"name": "violin"}, {"name": "cello"}],
+    "visual_style": "warm baroque chiaroscuro, anamorphic 50mm",
+    "biomechanical_plan": [{"shot_number": 1, "action": "bowing"}],
+    "ff_lf_strategy": "continuity_from_previous",
+    "recommended_model": "higgsfield_video_v1",
+    "ui_or_mcp_route": "mcp",
+    "success_criteria": ["identity stable across shots", "bowing reads as real"],
+}
+
 
 def _payload(res) -> dict:
     if getattr(res, "structuredContent", None):
@@ -208,6 +254,90 @@ async def main() -> int:
             md = ep.get("markdown")
             if md:
                 print(f"\n--- Execution Pack markdown (first 600 chars) ---\n{md[:600]}")
+
+            # === MULTISHOT case (Vivaldi quartet) — the path #4-#11 escaped ==
+            print("\n========== MULTISHOT CASE (Vivaldi quartet) ==========")
+            mintent = "Vivaldi Four Seasons performed by a string quartet, 3 shots"
+            mproj, err = await call("aurora_create_project", operator_intent=mintent,
+                                    mode="video_multishot", output_type="performance")
+            mpid = mproj.get("project_id")
+            record("M2 create_project(multishot)", not err and bool(mpid), f"pid={mpid}")
+            if mpid:
+                _, e1 = await call("aurora_create_domain_session_lock", project_id=mpid,
+                                   lock_data={"domain": "music",
+                                              "sub_domain": "classical_performance",
+                                              "project_scope": "video_multishot"})
+                record("M3 domain_session_lock", not e1, "")
+                await call("aurora_refresh_higgsfield_capabilities",
+                           scope="light_session", project_id=mpid)
+                await call("aurora_create_benchmark_pack", project_id=mpid,
+                           refs=[{"url_or_path": "https://ref/quartet.jpg",
+                                  "visual_traits": {"warmth": "high"}}])
+                await call("aurora_verify_route", project_id=mpid,
+                           feature_name="video_generation",
+                           route_data={"route_type": "mcp_callable", "verified": True,
+                                       "verification_source": "higgsfield_mcp_live",
+                                       "confidence": 0.95})
+                mpp, e2 = await call("aurora_validate_preproduction_packet",
+                                     packet=MULTISHOT_PACKET, project_id=mpid)
+                record("M7 preproduction_packet", not e2 and mpp.get("passed"),
+                       f"missing={mpp.get('missing')}")
+                await call("aurora_record_quality_score", project_id=mpid,
+                           score_type="image", score_data=IMAGE_SCORE)
+                await call("aurora_record_audit", project_id=mpid,
+                           criterion="identity_consistency", verdict="pass")
+                await call("aurora_check_quality_ceiling", project_id=mpid)
+                await call("aurora_validate_biomechanics", project_id=mpid,
+                           motion_plan={"action": "bowing", "scores": BIOMECH_SCORES})
+                # Rich operator packet (no rubric scores) — bug #7 path.
+                mpf, e3 = await call("aurora_check_prompt_fitness", project_id=mpid,
+                                     prompt_packet=PROMPT_PACKET_RICH)
+                record("M11 check_prompt_fitness(rich)", not e3 and mpf.get("passed"),
+                       f"score={mpf.get('score')}")
+                mms, e4 = await call("aurora_check_multishot_strategy", project_id=mpid,
+                                     shot_list=MULTISHOT_SHOTS)
+                record("M11 check_multishot_strategy", not e4 and mms.get("passed"),
+                       f"passed={mms.get('passed')}")
+                await call("aurora_check_anchors_ready", project_id=mpid)
+                # Gap #11: declare no finishing route required.
+                msf, e5 = await call("aurora_skip_finishing", project_id=mpid,
+                                     reason="raw higgsfield output is final")
+                record("M11 skip_finishing", not e5 and msf.get("ok"), "")
+                await call("aurora_record_psp_components", project_id=mpid,
+                           components=PSP_COMPONENTS)
+                await call("aurora_compute_production_success_probability",
+                           project_id=mpid)
+                mep, e6 = await call("aurora_emit_execution_pack", project_id=mpid)
+                mev = mep.get("gate_evaluation", {})
+                all_clear = bool(mev.get("all_clear"))
+                has_md = mep.get("markdown") is not None
+                record("M13 emit_execution_pack(multishot)",
+                       not e6 and mep.get("ok") and all_clear and has_md,
+                       f"all_clear={all_clear} md={has_md}")
+                print("\n--- multishot gate evaluation ---")
+                for g in mev.get("gates", []):
+                    print(f"   {g['status']:9} {g['name']}")
+                if mep.get("reason"):
+                    print("   reason:", mep["reason"])
+
+                # === BYPASS honored at emit (bug #9) — separate project ======
+                bproj, _ = await call("aurora_create_project",
+                                      operator_intent="bypass probe",
+                                      mode="video_simple", output_type="hero_ad")
+                bpid = bproj.get("project_id")
+                blog, eb = await call("aurora_log_bypass",
+                                      operator_text="OVERRIDE gate_prompt_fitness - operator accepts",
+                                      component="gate_prompt_fitness",
+                                      reason="operator accepts", scope="current_turn",
+                                      project_id=bpid)
+                bid = blog.get("bypass_id")
+                bep, _ = await call("aurora_emit_execution_pack", project_id=bpid,
+                                    bypass_ids=[bid] if bid else None)
+                bbypassed = {g["name"] for g in
+                             bep.get("gate_evaluation", {}).get("bypassed_gates", [])}
+                record("M14 bypass_ids honored",
+                       not eb and "gate_prompt_fitness" in bbypassed,
+                       f"bypassed={sorted(bbypassed)}")
 
     print("\n================ E2E SUMMARY ================")
     passed = sum(1 for _, ok, _ in results if ok)

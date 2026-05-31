@@ -32,11 +32,13 @@ from . import (
 from .gates import (
     gate_anchors_audited,
     gate_biomechanical_sanity,
+    gate_continuity_readiness,
     gate_multishot_anchor_strategy,
     gate_preproduction_packet,
     gate_prompt_fitness,
     gate_route_verification,
     gate_step_0_quality_ceiling,
+    gate_upscale_finishing_route,
 )
 from .models import VideoBrief
 from .routers import (
@@ -112,6 +114,35 @@ def _ensure_db() -> None:
 
 def _db() -> str:
     return str(DB_PATH)
+
+
+def _record_gate_eval(
+    project_id: Optional[str],
+    gate_name: str,
+    result: Any,
+    packet: Any = None,
+    evaluator_version: Optional[str] = None,
+) -> None:
+    """Persist a gate verdict so emit reads the recorded decision instead of
+    re-evaluating in-memory-only input (bugs #8/#10). No-op without project_id.
+
+    ``result`` is a GateResult-like object exposing .passed/.score/.reasons/.notes.
+    """
+    if not project_id:
+        return
+    status = "pass" if getattr(result, "passed", False) else "fail"
+    score = getattr(result, "score", None)
+    db.put_gate_evaluation(
+        project_id=project_id,
+        gate_name=gate_name,
+        status=status,
+        score=int(score) if isinstance(score, (int, float)) else None,
+        reasons=list(getattr(result, "reasons", []) or []),
+        notes=getattr(result, "notes", "") or "",
+        packet=packet,
+        evaluator_version=evaluator_version,
+        db_path=_db(),
+    )
 
 
 # ===========================================================================
@@ -236,11 +267,28 @@ def aurora_validate_preproduction_packet(
     packet: dict[str, Any], project_id: Optional[str] = None
 ) -> dict[str, Any]:
     """Run the 'regla inviolable' gate over a preproduction packet (Sección 7).
-    Reporting only — does not block. Persists the packet when project_id given."""
-    result = gate_preproduction_packet.validate_packet(packet or {})
+    Reporting only — does not block. Persists the packet + records the gate
+    verdict when project_id is given, so emit reads the same result (bug #8)."""
+    packet = packet or {}
+    result = gate_preproduction_packet.validate_packet(packet)
     if project_id:
         _ensure_db()
-        db.put_artifact(project_id, "preproduction_packet", packet or {}, db_path=_db())
+        db.put_artifact(project_id, "preproduction_packet", packet, db_path=_db())
+        # The shot_list lives inside the packet; persist it on its own so the
+        # continuity + multishot gates read it without a separate check (bug #10).
+        shot_list = packet.get("shot_list")
+        if isinstance(shot_list, list) and shot_list:
+            db.put_artifact(project_id, "shot_list", shot_list, db_path=_db())
+        db.put_gate_evaluation(
+            project_id=project_id,
+            gate_name="gate_preproduction_packet",
+            status="pass" if result.passed else "fail",
+            reasons=[f"missing: {m}" for m in result.missing],
+            notes="; ".join(result.warnings),
+            packet=packet,
+            evaluator_version="preproduction/2.2",
+            db_path=_db(),
+        )
     return result.model_dump()
 
 
@@ -303,6 +351,27 @@ def aurora_propose_video_execution(
     if video_packet.get("finishing"):
         db.put_artifact(project_id, "finishing", video_packet["finishing"], db_path=_db())
     return {"ok": selection["ok"], "project_id": project_id, "proposal": selection}
+
+
+@mcp.tool()
+def aurora_skip_finishing(project_id: str, reason: str = "") -> dict[str, Any]:
+    """Mark a project as needing no upscale/finishing pass (Sección 13B.3). Use
+    when the raw Higgsfield output is the final deliverable. Records the
+    finishing route as not-required so gate_upscale_finishing_route passes."""
+    _ensure_db()
+    finishing = {
+        "upscale_route": "outside_aurora",
+        "not_required": True,
+        "tools": [],
+        "reason": reason or "operator: no finishing required",
+    }
+    db.put_artifact(project_id, "finishing", finishing, db_path=_db())
+    result = gate_upscale_finishing_route.check(finishing)
+    _record_gate_eval(
+        project_id, "gate_upscale_finishing_route", result, packet=finishing,
+        evaluator_version="finishing/2.2",
+    )
+    return {"ok": True, "project_id": project_id, "finishing": finishing}
 
 
 # ===========================================================================
@@ -403,7 +472,9 @@ def aurora_check_quality_ceiling(project_id: str) -> dict[str, Any]:
         "image_scores": _image_scores(project_id),
         "audits": db.get_audits(project_id, db_path=_db()),
     }
-    return gate_step_0_quality_ceiling.check(context).model_dump()
+    result = gate_step_0_quality_ceiling.check(context)
+    _record_gate_eval(project_id, "gate_step_0_quality_ceiling", result)
+    return result.model_dump()
 
 
 @mcp.tool()
@@ -413,28 +484,28 @@ def aurora_validate_biomechanics(
     """Validate a biomechanical motion plan for hard fails (Sección 7.3)."""
     _ensure_db()
     db.put_artifact(project_id, "motion_plan", motion_plan or {}, db_path=_db())
-    return gate_biomechanical_sanity.check(motion_plan).model_dump()
+    result = gate_biomechanical_sanity.check(motion_plan)
+    _record_gate_eval(
+        project_id, "gate_biomechanical_sanity", result, packet=motion_plan,
+        evaluator_version="biomechanics/2.2",
+    )
+    return result.model_dump()
 
 
 @mcp.tool()
 def aurora_check_prompt_fitness(
     project_id: str, prompt_packet: dict[str, Any]
 ) -> dict[str, Any]:
-    """Check Prompt Fitness (Sección 3.6 / 7.1)."""
+    """Check Prompt Fitness (Sección 3.6 / 7.1). Accepts either per-criterion
+    rubric scores or a rich prompt packet — both are scored sensibly (bug #7)."""
     _ensure_db()
     db.put_artifact(project_id, "prompt_packet", prompt_packet or {}, db_path=_db())
-    result = gate_prompt_fitness.check(prompt_packet).model_dump()
-    # Loud shape guard: prompt_fitness expects per-criterion rubric scores
-    # (0-100), NOT raw prompt text. If none are present, say so explicitly so a
-    # near-zero score is never mistaken for "the prompt is bad".
-    expected = expected_criteria_for(prompt_fitness_score)
-    if isinstance(prompt_packet, dict) and not any(k in prompt_packet for k in expected):
-        result["input_shape_warning"] = (
-            "prompt_packet contained none of the expected rubric keys "
-            f"{expected} (each 0-100). The score reflects missing scores, not "
-            "prompt quality. Provide per-criterion fitness scores."
-        )
-    return result
+    result = gate_prompt_fitness.check(prompt_packet)
+    _record_gate_eval(
+        project_id, "gate_prompt_fitness", result, packet=prompt_packet,
+        evaluator_version=prompt_fitness_score.EVALUATOR_VERSION,
+    )
+    return result.model_dump()
 
 
 @mcp.tool()
@@ -446,7 +517,19 @@ def aurora_check_multishot_strategy(
     """Check multishot anchor strategy (Sección 7.1 / 6.5)."""
     _ensure_db()
     db.put_artifact(project_id, "shot_list", shot_list or [], db_path=_db())
-    return gate_multishot_anchor_strategy.check(shot_list).model_dump()
+    result = gate_multishot_anchor_strategy.check(shot_list)
+    _record_gate_eval(
+        project_id, "gate_multishot_anchor_strategy", result, packet=shot_list,
+        evaluator_version="multishot/2.2",
+    )
+    # The continuity gate reads the same shot_list; record it here too so a
+    # single check call satisfies both multishot gates at emit time.
+    continuity = gate_continuity_readiness.check(shot_list)
+    _record_gate_eval(
+        project_id, "gate_continuity_readiness", continuity, packet=shot_list,
+        evaluator_version="continuity/2.2",
+    )
+    return result.model_dump()
 
 
 @mcp.tool()
@@ -463,7 +546,9 @@ def aurora_check_anchors_ready(project_id: str) -> dict[str, Any]:
             "anchors_approved_count": len(approved),
             "anchor_audits": [],
         }
-    return gate_anchors_audited.check(state).model_dump()
+    result = gate_anchors_audited.check(state)
+    _record_gate_eval(project_id, "gate_anchors_audited", result)
+    return result.model_dump()
 
 
 @mcp.tool()
@@ -481,6 +566,19 @@ def aurora_compute_production_success_probability(project_id: str) -> dict[str, 
         score_type="production_probability",
         score_data={**components, **result},
         total_score=int(result["total_score"]),
+        db_path=_db(),
+    )
+    db.put_gate_evaluation(
+        project_id=project_id,
+        gate_name="gate_production_success_probability",
+        status="pass" if result.get("passed") else "fail",
+        score=int(result["total_score"]),
+        reasons=[] if result.get("passed") else [
+            f"PSP {result['total_score']} < {result.get('threshold', 85)}; "
+            f"weakest: {result.get('weakest_component')}"
+        ],
+        packet=components,
+        evaluator_version="psp/2.2",
         db_path=_db(),
     )
     return {"ok": True, "result": result}
@@ -501,17 +599,38 @@ def aurora_record_psp_components(
 # ===========================================================================
 @mcp.tool()
 def aurora_emit_execution_pack(
-    project_id: str, elements_with_urls: Optional[dict[str, str]] = None
+    project_id: str,
+    elements_with_urls: Optional[dict[str, str]] = None,
+    bypass_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Emit the Execution Pack (Sección 10/13). BLOCKS unless every required
-    gate for the mode passes or has a registered active bypass."""
+    gate for the mode passes or has a registered active bypass.
+
+    Gate verdicts recorded by the validate_*/check_* tools are read from
+    gate_evaluations (persist-then-read); gates with no recorded verdict are
+    evaluated from assembled context. ``bypass_ids`` explicitly applies bypasses
+    logged via aurora_log_bypass (any scope, including current_turn), so an
+    operator override is honored at emit time (bug #9)."""
     _ensure_db()
     project = db.get_project(project_id, db_path=_db())
     if not project:
         return {"ok": False, "reason": f"unknown project: {project_id}"}
     mode = project.get("mode") or "image"
     context = _assemble_context(project_id, project, elements_with_urls or {})
+    recorded = db.get_latest_gate_evaluations(project_id, db_path=_db())
+
+    # Bypass sources, in increasing specificity:
+    #  1. global persist/all_session active bypasses,
+    #  2. current_turn bypasses logged against this project,
+    #  3. explicit bypass_ids the caller chose to apply.
     active = db.get_active_bypasses(db_path=_db())
+    active.update(db.get_logged_bypasses_for_project(project_id, db_path=_db()))
+    for bid in bypass_ids or []:
+        row = db.get_bypass_log(bid, db_path=_db())
+        if row and row.get("component_bypassed"):
+            comp = bypass_handler.canonical_component(row["component_bypassed"])
+            active[comp] = row.get("reason") or "operator bypass"
+
     project_view = {
         "project_id": project_id,
         "operator_intent": project.get("operator_intent", ""),
@@ -519,7 +638,7 @@ def aurora_emit_execution_pack(
         "mode": mode,
     }
     result = execution_pack_builder.build_execution_pack(
-        project_view, context, mode, active_bypasses=active
+        project_view, context, mode, active_bypasses=active, recorded=recorded
     )
     if result["ok"]:
         anchors = context.get("anchor_state") or {}
@@ -540,13 +659,16 @@ def aurora_emit_execution_pack(
 # ===========================================================================
 @mcp.tool()
 def aurora_log_bypass(
-    operator_text: str,
+    operator_text: str = "",
     component: Optional[str] = None,
     reason: Optional[str] = None,
     scope: Optional[str] = None,
+    project_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Register an operator bypass directive (Sección K). When component/reason
-    are omitted, the directive is parsed from operator_text."""
+    are omitted, the directive is parsed from operator_text. Pass project_id to
+    scope the bypass to a project so emit honors it (bug #9); the returned
+    bypass_id can also be passed to aurora_emit_execution_pack(bypass_ids=[...])."""
     _ensure_db()
     if not component or not reason:
         parsed = bypass_handler.parse_bypass(operator_text or "")
@@ -571,10 +693,16 @@ def aurora_log_bypass(
         scope=scope,  # type: ignore[arg-type]
         detected_in_text=operator_text or f"{component} - {reason}",
     )
-    bypass_id = bypass_handler.log_bypass(directive, db_path=_db())
+    bypass_id = bypass_handler.log_bypass(directive, project_id=project_id, db_path=_db())
     if scope in ("persist", "all_session"):
-        db.set_active_bypass(component, scope, reason, db_path=_db())
-    return {"ok": True, "bypass_id": bypass_id, "scope": scope, "component": component}
+        db.set_active_bypass(component, scope, reason, project_id=project_id, db_path=_db())
+    return {
+        "ok": True,
+        "bypass_id": bypass_id,
+        "scope": scope,
+        "component": component,
+        "project_id": project_id,
+    }
 
 
 @mcp.tool()
@@ -671,6 +799,12 @@ def _assemble_context(
     ]
 
     packet = db.get_artifact(project_id, "preproduction_packet", db_path=_db()) or {}
+    # shot_list may have been recorded standalone (check_multishot_strategy) or
+    # only embedded in the preproduction packet; prefer the standalone artifact,
+    # fall back to the packet so the continuity gate reads it either way (#10).
+    shot_list = db.get_artifact(project_id, "shot_list", db_path=_db())
+    if not shot_list:
+        shot_list = packet.get("shot_list") or []
     anchor_state = db.get_artifact(project_id, "anchor_state", db_path=_db())
     if not anchor_state:
         anchors = [e for e in elements_rows if (e.get("usage_role") or "") == "anchor"]
@@ -709,7 +843,7 @@ def _assemble_context(
         "anchor_state": anchor_state,
         "motion_plan": db.get_artifact(project_id, "motion_plan", db_path=_db()),
         "prompt_packet": db.get_artifact(project_id, "prompt_packet", db_path=_db()),
-        "shot_list": db.get_artifact(project_id, "shot_list", db_path=_db()),
+        "shot_list": shot_list,
         "psp_components": db.get_artifact(project_id, "psp_components", db_path=_db()),
         "psp_result": db.get_artifact(project_id, "psp_result", db_path=_db())
         or {"total_score": 0},
@@ -740,6 +874,7 @@ _EXPECTED_TABLES = {
     "execution_packs",
     "bypass_log",
     "active_bypasses",
+    "gate_evaluations",
     "shots",
     "soul_ids",
     "elements",
@@ -768,6 +903,7 @@ _REQUIRED_TOOLS = {
     "aurora_check_multishot_strategy",
     "aurora_check_anchors_ready",
     "aurora_compute_production_success_probability",
+    "aurora_skip_finishing",
     "aurora_emit_execution_pack",
     "aurora_log_bypass",
     "aurora_resolve_model_alias",
