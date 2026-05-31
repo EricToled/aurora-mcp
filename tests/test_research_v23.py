@@ -137,6 +137,24 @@ def test_build_prompt_blocks_without_dossier(server_db):
     assert out["next_call"]["tool"] == "aurora_request_platform_research"
 
 
+def test_build_prompt_handles_mapping_params_schema(server_db):
+    # Regression (found live): a dossier whose params_schema is a {name: spec}
+    # MAPPING (not a list of param dicts) must not crash the mcp_payload renderer
+    # by calling .get on a bare string key.
+    pid = srv.aurora_create_project("x", "video_simple", "perf")["project_id"]
+    dossier = _dossier("veo", "video_simple")
+    dossier["params_schema"] = {"prompt": "str", "medias": "list", "duration": "int"}
+    srv.aurora_record_platform_research(
+        project_id=pid, model_id="veo", output_type="video_simple",
+        syntax_dossier=dossier, sources=_sources(3), ttl_days=30)
+    out = srv.aurora_build_prompt(
+        project_id=pid, model_id="veo", output_type="video_simple",
+        shot_or_element_data={"subject": "@x", "action": "run", "look": "noir"})
+    assert out["ok"]
+    assert "@x" in out["prompt_final"]
+    assert out["mcp_payload"]["model_id"] == "veo"
+
+
 def test_build_prompt_requires_valid_output_type(server_db):
     pid = srv.aurora_create_project("x", "video_simple", "perf")["project_id"]
     out = srv.aurora_build_prompt(

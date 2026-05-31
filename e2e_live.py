@@ -421,7 +421,7 @@ async def main() -> int:
             print("\n========== PIPELINE A CASE (image research) ==========")
             iproj, _ = await call("aurora_create_project",
                                   operator_intent="genesis hero still of a sprinter",
-                                  mode="image_simple", output_type="hero_image")
+                                  mode="image", output_type="hero_image")
             ipid = iproj.get("project_id")
             record("A2 create_project(image)", bool(ipid), f"pid={ipid}")
             if ipid:

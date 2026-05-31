@@ -846,7 +846,20 @@ def _render_mcp_payload(
     dossier: dict[str, Any], data: dict[str, Any], injection: Optional[dict[str, Any]]
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"model_id": dossier.get("model_id")}
-    for param in dossier.get("params_schema", []) or []:
+    # params_schema may be a list of {name, default} dicts OR a dict mapping
+    # param name -> type/spec. Normalise to dicts before reading defaults so a
+    # mapping-shaped schema never makes us call .get on a bare string key.
+    schema = dossier.get("params_schema") or []
+    if isinstance(schema, dict):
+        params = [
+            {"name": k, **(v if isinstance(v, dict) else {})}
+            for k, v in schema.items()
+        ]
+    else:
+        params = schema
+    for param in params:
+        if not isinstance(param, dict):
+            continue
         name = param.get("name")
         if name and param.get("default") is not None:
             payload[name] = param.get("default")
