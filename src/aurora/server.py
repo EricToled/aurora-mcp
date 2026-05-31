@@ -27,6 +27,7 @@ from . import (
     bypass_handler,
     capability_refresh,
     db,
+    decision_sheet,
     execution_pack_builder,
     theme_resolver,
 )
@@ -34,6 +35,7 @@ from .gates import (
     gate_anchors_audited,
     gate_biomechanical_sanity,
     gate_continuity_readiness,
+    gate_decision_sheet_approved,
     gate_multishot_anchor_strategy,
     gate_preproduction_packet,
     gate_prompt_fitness,
@@ -196,6 +198,10 @@ _ATTESTABLE_STEPS: dict[str, dict[str, str]] = {
 # gate name -> step name (reverse index)
 _GATE_TO_STEP = {v["gate"]: k for k, v in _ATTESTABLE_STEPS.items()}
 
+# Modes that actually generate creative prompts and therefore REQUIRE an approved
+# Decision Sheet before emit will seal the Execution Pack (anti-invención Fase 1).
+_CONTENT_MODES = {"image", "video_simple", "video_multishot"}
+
 _INVENTION_ALARM = "🚨 Claude está inventando información — delivery BLOQUEADO"
 
 
@@ -236,14 +242,18 @@ def _emit_push_alert(title: str, message: str, project_id: Optional[str] = None)
     if not url:
         return False
     try:
-        import json as _json
         import urllib.request
 
-        payload = _json.dumps(
-            {"title": title, "message": message, "project_id": project_id}
-        ).encode("utf-8")
+        # ntfy-native format: the message is the request BODY (UTF-8, so accents
+        # and newlines render fine) and the Title goes in a header. HTTP headers
+        # are latin-1 only, so emojis/accents in the title are stripped to ASCII;
+        # the rich text lives in the body. Works for any plain-text webhook too.
+        body = f"{message}\n(proyecto {project_id})" if project_id else message
+        safe_title = title.encode("ascii", "ignore").decode("ascii").strip() or "AURORA"
         req = urllib.request.Request(
-            url, data=payload, headers={"Content-Type": "application/json"}
+            url,
+            data=body.encode("utf-8"),
+            headers={"Title": safe_title, "Priority": "high", "Tags": "rotating_light"},
         )
         urllib.request.urlopen(req, timeout=5)  # noqa: S310 - operator-set URL
         return True
@@ -1304,6 +1314,114 @@ def aurora_lint_prompt(
 
 
 @mcp.tool()
+def aurora_create_decision_sheet(
+    project_id: str,
+    decisions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Crea/actualiza la Decision Sheet del proyecto (anti-invención, Fase 1).
+
+    Antes de sellar un Execution Pack en un modo de contenido (image /
+    video_simple / video_multishot), AURORA exige que CADA decisión creativa que
+    NO fue especificada por el operador quede listada aquí para su aprobación:
+    edad/complexión de un personaje, geometría de una locación, lente, duración
+    de shot, estimado PSP, etc.
+
+    Cada item de ``decisions`` es un dict:
+      {category, item, field, value, source}
+    donde ``source`` ∈ {operator, claude, research}. Las decisiones con
+    source=operator se auto-aprueban (no hay nada que Claude haya inventado);
+    todo lo demás queda PENDIENTE hasta que el operador apruebe con
+    aurora_approve_decision_sheet (autenticado con operator_token).
+
+    Crear la hoja NO la aprueba: emit sigue bloqueado hasta la aprobación
+    autenticada. Devuelve un resumen con lo pendiente."""
+    _ensure_db()
+    project = db.get_project(project_id, db_path=_db())
+    if not project:
+        return {"ok": False, "reason": f"unknown project: {project_id}"}
+    normalized = decision_sheet.normalize_decisions(decisions or [])
+    # Re-crear la hoja siempre exige una nueva aprobación: nunca arrastres un
+    # operator_approved viejo a un set de decisiones distinto (cierra el hueco de
+    # "aprobé una hoja, le agrego decisiones nuevas y emito sin que las vea").
+    sheet = {"decisions": normalized, "operator_approved": False}
+    db.put_artifact(project_id, "decision_sheet", sheet, db_path=_db())
+    gate_result = gate_decision_sheet_approved.check(sheet)
+    _record_gate_eval(
+        project_id, gate_decision_sheet_approved.GATE_NAME, gate_result,
+        packet=sheet, evaluator_version="decision_sheet/1.0",
+    )
+    summary = decision_sheet.summarize(sheet)
+    return {
+        "ok": True,
+        "approved": summary["approved"],
+        "summary": summary,
+        "next": (
+            "El operador (Eric) debe aprobar con aurora_approve_decision_sheet("
+            "project_id, operator_token=...). Claude NO puede aprobar."
+            if not summary["approved"]
+            else "Hoja sin pendientes; falta la aprobación autenticada del operador."
+        ),
+    }
+
+
+@mcp.tool()
+def aurora_approve_decision_sheet(
+    project_id: str,
+    operator_token: Optional[str] = None,
+    approve: Any = "all",
+    edits: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Aprobación AUTENTICADA de la Decision Sheet — sólo el operador (Eric).
+
+    ANTI-INVENCIÓN: la aprobación únicamente surte efecto si ``operator_token``
+    coincide con AURORA_OPERATOR_TOKEN del servidor. Sin token válido NO se
+    aprueba nada y se levanta un SECURITY_HALT ('Claude está intentando aprobar
+    en nombre del operador'): Claude no puede firmar sus propias propuestas para
+    desbloquear emit.
+
+    ``approve``: "all"/True aprueba todas las decisiones, o una lista de ids para
+    aprobar selectivamente. ``edits``: lista de {id, value?} — una decisión editada
+    pasa a ser propiedad del operador y queda aprobada. La hoja queda APROBADA sólo
+    cuando no quedan decisiones pendientes."""
+    _ensure_db()
+    project = db.get_project(project_id, db_path=_db())
+    if not project:
+        return {"ok": False, "reason": f"unknown project: {project_id}"}
+    sheet = db.get_artifact(project_id, "decision_sheet", db_path=_db())
+    if not sheet:
+        return {
+            "ok": False,
+            "reason": (
+                "No hay Decision Sheet que aprobar. Crea una primero con "
+                "aurora_create_decision_sheet."
+            ),
+        }
+    if not _token_is_valid(operator_token):
+        token_configured = _expected_operator_token() is not None
+        return _security_halt(
+            alarm="🚨 Claude está intentando aprobar en nombre del operador",
+            violations=[
+                "aurora_approve_decision_sheet llamado sin un operator_token válido."
+                if token_configured
+                else "AURORA_OPERATOR_TOKEN no está configurado en el servidor, así "
+                "que NINGUNA aprobación puede autenticarse (fail-closed).",
+            ],
+            project_id=project_id,
+            component=gate_decision_sheet_approved.GATE_NAME,
+            event_type="unauthorized_decision_sheet_approval",
+        )
+    decision_sheet.apply_approval(sheet, approve=approve, edits=edits or [])
+    db.put_artifact(project_id, "decision_sheet", sheet, db_path=_db())
+    gate_result = gate_decision_sheet_approved.check(sheet)
+    _record_gate_eval(
+        project_id, gate_decision_sheet_approved.GATE_NAME, gate_result,
+        packet=sheet, evaluator_version="decision_sheet/1.0",
+    )
+    summary = decision_sheet.summarize(sheet)
+    return {"ok": True, "approved": summary["approved"], "summary": summary}
+
+
+@mcp.tool()
 def aurora_check_multishot_strategy(
     project_id: str,
     shot_list: list[dict[str, Any]],
@@ -1628,6 +1746,37 @@ def aurora_emit_execution_pack(
                 "questions": {
                     s: _ATTESTABLE_STEPS[s]["question"] for s in missing_attestation
                 },
+            }
+
+    # DECISION SHEET (conditional gate, content modes only): the FINAL operator
+    # sign-off before sealing. Claude legitimately PROPOSES details the brief never
+    # specified (a character's age, a location's geometry, a lens, a shot duration,
+    # a PSP estimate); it must not seal a pack of prompts built on those proposals
+    # without the operator approving them. For image/video_simple/video_multishot,
+    # emit hard-blocks until an APPROVED Decision Sheet exists (authenticated with
+    # the operator_token), unless an AUTHORIZED override of the gate is in effect.
+    # Checked last, after the SHAPE gates and the honesty attestations pass.
+    if (result.get("ok")
+            and mode in _CONTENT_MODES
+            and "all" not in active
+            and gate_decision_sheet_approved.GATE_NAME not in active):
+        sheet = db.get_artifact(project_id, "decision_sheet", db_path=_db())
+        ds_gate = gate_decision_sheet_approved.check(sheet)
+        if not ds_gate.passed:
+            return {
+                "ok": False,
+                "status": "DECISION_SHEET_NOT_APPROVED",
+                "reason": (
+                    "Falta una Decision Sheet aprobada por el operador. Cada "
+                    "decisión creativa que Claude propuso (personaje/locación/"
+                    "cinema/estimado) debe firmarse antes de sellar prompts. "
+                    "Crea/actualiza con aurora_create_decision_sheet y pide la "
+                    "aprobación autenticada con aurora_approve_decision_sheet, o "
+                    "autoriza OVERRIDE: gate_decision_sheet_approved."
+                ),
+                "project_id": project_id,
+                "decision_sheet": decision_sheet.summarize(sheet),
+                "reasons": ds_gate.reasons,
             }
 
     if result["ok"]:

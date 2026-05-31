@@ -168,6 +168,15 @@ def _drive_multishot_to_psp(pid: str) -> None:
     # Sprint B: each content step ends with a mandatory honesty attestation.
     # Drive them all clean so emit can deliver the document.
     _attest_all_clean(pid)
+    # Fase 1 (Decision Sheet): the operator's final sign-off before sealing.
+    _approve_decision_sheet(pid)
+
+
+def _approve_decision_sheet(pid: str) -> None:
+    """Create + authenticate-approve the Decision Sheet so emit can seal the
+    pack (anti-invention Fase 1). An empty sheet still needs the token approval."""
+    srv.aurora_create_decision_sheet(pid, [])
+    srv.aurora_approve_decision_sheet(pid, operator_token=OPERATOR_TOKEN)
 
 
 def _attest_all_clean(pid: str) -> None:
@@ -277,6 +286,10 @@ def test_bypass_ids_honored_in_emit(server_db):
         srv.aurora_log_bypass(operator_text=f"OVERRIDE {gate}", component=gate,
                               reason="isolation", scope="persist", project_id=pid,
                               operator_token=OPERATOR_TOKEN)
+    # Fase 1: also bypass the final Decision Sheet sign-off to isolate prompt_fitness.
+    srv.aurora_log_bypass(operator_text="OVERRIDE gate_decision_sheet_approved",
+                          component="gate_decision_sheet_approved", reason="isolation",
+                          scope="persist", project_id=pid, operator_token=OPERATOR_TOKEN)
     emit = srv.aurora_emit_execution_pack(pid, bypass_ids=[log["bypass_id"]])
     assert emit["ok"], emit.get("reason")
     bypassed = {g["name"] for g in emit["gate_evaluation"]["bypassed_gates"]}

@@ -80,6 +80,10 @@ def _drive_gates_green_no_attest(pid: str) -> None:
         "gate_compliance", "route_verification", "benchmark_match", "anchor_quality",
         "biomechanical_plausibility", "continuity_readiness", "prompt_fitness")})
     srv.aurora_compute_production_success_probability(pid)
+    # Fase 1 (Decision Sheet): operator sign-off. Checked AFTER attestation, so
+    # the missing-attestation test still surfaces ATTESTATION_REQUIRED first.
+    srv.aurora_create_decision_sheet(pid, [])
+    srv.aurora_approve_decision_sheet(pid, operator_token=OPERATOR_TOKEN)
 
 
 def _attest_all_clean(pid: str) -> None:
@@ -193,5 +197,10 @@ def test_bypassed_gate_needs_no_attestation(server_db):
             component=gate, reason="authorized", scope="persist", project_id=pid,
             operator_token=OPERATOR_TOKEN)
         assert res["ok"] is True
+    # Fase 1: also bypass the final Decision Sheet sign-off (operator authorized all).
+    srv.aurora_log_bypass(
+        operator_text="OVERRIDE PERSIST: gate_decision_sheet_approved - operator authorized",
+        component="gate_decision_sheet_approved", reason="authorized", scope="persist",
+        project_id=pid, operator_token=OPERATOR_TOKEN)
     emit = srv.aurora_emit_execution_pack(pid)
     assert emit["ok"], emit.get("reason") or emit.get("status")

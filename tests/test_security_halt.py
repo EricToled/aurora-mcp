@@ -81,6 +81,11 @@ def test_valid_token_authorizes_bypass(server_db):
             operator_token=OPERATOR_TOKEN)
         assert res["ok"] is True, (gate, res)
         assert res["authorized"] is True
+    # Fase 1: also authorize bypassing the final Decision Sheet sign-off.
+    srv.aurora_log_bypass(
+        operator_text="OVERRIDE PERSIST: gate_decision_sheet_approved - authorized",
+        component="gate_decision_sheet_approved", reason="authorized", scope="persist",
+        project_id=pid, operator_token=OPERATOR_TOKEN)
     # No security events were raised; emit proceeds.
     assert not db.get_security_events(pid, db_path=str(server_db))
     emit = srv.aurora_emit_execution_pack(pid)

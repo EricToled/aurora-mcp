@@ -56,6 +56,12 @@ def test_bypass_unblocks_emit_for_every_required_gate(tmp_path, monkeypatch):
         )
         assert res["ok"], (gate, res)
         assert res["component"] == gate
+    # Fase 1: the conditional Decision Sheet gate is not in required_gates_for_mode,
+    # so bypass it explicitly to let the otherwise-empty project emit.
+    srv.aurora_log_bypass(
+        operator_text="OVERRIDE PERSIST: gate_decision_sheet_approved - coherence test",
+        component="gate_decision_sheet_approved", reason="coherence test",
+        scope="persist", operator_token="coherence-token")
     emit = srv.aurora_emit_execution_pack(pid)
     assert emit["ok"], emit.get("reason")
 
