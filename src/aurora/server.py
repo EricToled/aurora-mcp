@@ -764,6 +764,143 @@ def _image_scores(project_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def _elements_from_packet(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    """Derive the section-5 element catalogue from a preproduction packet when no
+    audited element rows exist yet. IDs come only from the packet (soul_id /
+    higgsfield_element_id); a missing ID stays blank — never invented."""
+    out: list[dict[str, Any]] = []
+    for c in packet.get("characters") or []:
+        if not isinstance(c, dict):
+            continue
+        out.append({
+            "name": c.get("name", ""),
+            "category": "character",
+            "higgsfield_element_id": c.get("soul_id") or c.get("higgsfield_element_id", "") or "",
+            "url": "",
+            "audit_status": "from_packet",
+            "quality_score": None,
+        })
+    loc = packet.get("location") or {}
+    if isinstance(loc, dict) and loc:
+        out.append({
+            "name": loc.get("name", ""),
+            "category": "location",
+            "higgsfield_element_id": loc.get("higgsfield_element_id", "") or "",
+            "url": "",
+            "audit_status": "from_packet",
+            "quality_score": None,
+        })
+    for p in packet.get("props_or_product") or []:
+        if not isinstance(p, dict):
+            continue
+        out.append({
+            "name": p.get("name", ""),
+            "category": "prop_or_product",
+            "higgsfield_element_id": p.get("higgsfield_element_id", "") or "",
+            "url": "",
+            "audit_status": "from_packet",
+            "quality_score": None,
+        })
+    return out
+
+
+def _global_ui_from_packet(
+    packet: dict[str, Any], prompt_packet: dict[str, Any]
+) -> Optional[dict[str, Any]]:
+    """Build the section-7 Global UI block from the packet's visual style + the
+    prompt packet's camera. Returns None (→ 'no UI setup required') only when the
+    packet truly carries neither, so the section reflects real operator data."""
+    pp = prompt_packet or {}
+    cam = pp.get("camera") if isinstance(pp.get("camera"), dict) else {}
+    style = packet.get("visual_style") or pp.get("look") or pp.get("style_palette")
+    if not style and not cam:
+        return None
+    return {
+        "ui_product_name": packet.get("recommended_model") or pp.get("model") or "",
+        "genre": packet.get("genre", ""),
+        "style_palette": style or "",
+        "camera_body": cam.get("body", ""),
+        "aspect_ratio": cam.get("aspect_ratio", ""),
+        "resolution": cam.get("resolution", ""),
+        "audio": packet.get("audio_strategy", ""),
+    }
+
+
+def _shots_for_render(
+    shot_list: list[dict[str, Any]],
+    prompt_packet: dict[str, Any],
+    packet: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Map the persisted shot_list into the rich section-8 shot structure the
+    template renders (UI config, MCSLA, anchors, continuity, prompt, negatives).
+
+    Per-shot fields win; otherwise project-level prompt-packet values fill in so
+    the operative document is populated from validated data instead of blank. No
+    field is fabricated — absent data renders as an empty cell."""
+    import yaml as _yaml
+
+    pp = prompt_packet or {}
+    cam = pp.get("camera") if isinstance(pp.get("camera"), dict) else {}
+    style = packet.get("visual_style") or pp.get("look") or pp.get("style_palette") or ""
+    subject = pp.get("subject")
+    if not isinstance(subject, list):
+        subject = [subject] if subject else []
+
+    shots: list[dict[str, Any]] = []
+    for sh in shot_list or []:
+        if not isinstance(sh, dict):
+            continue
+        anchor = dict(sh.get("anchor_strategy") or {})
+        # The template reads anchor_strategy.reference_injection.inject_syntax;
+        # default it so a packet anchor without that nested block renders blank
+        # instead of raising.
+        anchor.setdefault("reference_injection", {})
+        cont = sh.get("continuity") or {}
+        bio = sh.get("biomechanical_plan") or sh.get("biomechanics") or {}
+        mcp_payload = sh.get("mcp_payload")
+        shots.append({
+            "shot_number": sh.get("shot_number"),
+            "function": sh.get("function") or sh.get("shot_type") or "",
+            "route_id": sh.get("route_id") or pp.get("model") or "",
+            "route_type": sh.get("route_type") or "",
+            "duration_seconds": sh.get("duration_seconds"),
+            "shot_type": sh.get("shot_type") or "",
+            "ui_config": sh.get("ui_config") or {
+                "route_id": sh.get("route_id") or pp.get("model", ""),
+                "genre": packet.get("genre", ""),
+                "style_palette": style,
+                "camera_moveset": cam.get("movement", ""),
+                "speed_ramp": "",
+                "resolution": cam.get("resolution", ""),
+                "audio": packet.get("audio_strategy", ""),
+                "duration_seconds": sh.get("duration_seconds"),
+            },
+            "mcp_payload": mcp_payload,
+            "mcp_payload_json": execution_pack_builder.to_pretty_json(mcp_payload)
+            if mcp_payload else "",
+            "anchor_strategy": anchor,
+            "mcsla": sh.get("mcsla") or {
+                "model": pp.get("model", "") or sh.get("route_id", ""),
+                "camera": cam.get("body", "") or cam.get("movement", ""),
+                "subject": subject,
+                "look": style,
+                "action": sh.get("action") or pp.get("action") or "",
+            },
+            "prompt_final": sh.get("prompt_final") or pp.get("prompt_final") or "",
+            "biomechanical_yaml": _yaml.safe_dump(bio, allow_unicode=True, sort_keys=False)
+            if bio else "",
+            "negative_constraints": sh.get("negative_constraints")
+            or pp.get("negative_constraints") or [],
+            "continuity": cont,
+            "expected_scores": sh.get("expected_scores") or {
+                "prompt_fitness_min": prompt_fitness_score.THRESHOLD,
+                "biomechanics_min": 85,
+                "continuity_readiness_min": 85,
+            },
+        })
+    return shots
+
+
 def _assemble_context(
     project_id: str, project: dict[str, Any], element_urls: dict[str, str]
 ) -> dict[str, Any]:
@@ -832,6 +969,21 @@ def _assemble_context(
         for comp, rsn in active.items()
     ]
 
+    prompt_packet = db.get_artifact(project_id, "prompt_packet", db_path=_db()) or {}
+
+    # The validated packet is the source of operative content. When the dedicated
+    # tables/artifacts that normally carry richer data are empty, fall back to the
+    # persisted packet so the Execution Pack's critical sections (5 elements, 7 UI,
+    # 8 shot list) are populated instead of ceremonially blank.
+    if not elements:
+        elements = _elements_from_packet(packet)
+    execution_shots = db.get_artifact(project_id, "execution_shots", db_path=_db())
+    if not execution_shots:
+        execution_shots = _shots_for_render(shot_list, prompt_packet, packet)
+    global_ui_config = db.get_artifact(project_id, "global_ui_config", db_path=_db())
+    if not global_ui_config:
+        global_ui_config = _global_ui_from_packet(packet, prompt_packet)
+
     return {
         "domain_lock": domain_lock,
         "refresh_snapshot": snapshot,
@@ -842,7 +994,7 @@ def _assemble_context(
         "audits": db.get_audits(project_id, db_path=_db()),
         "anchor_state": anchor_state,
         "motion_plan": db.get_artifact(project_id, "motion_plan", db_path=_db()),
-        "prompt_packet": db.get_artifact(project_id, "prompt_packet", db_path=_db()),
+        "prompt_packet": prompt_packet,
         "shot_list": shot_list,
         "psp_components": db.get_artifact(project_id, "psp_components", db_path=_db()),
         "psp_result": db.get_artifact(project_id, "psp_result", db_path=_db())
@@ -850,13 +1002,13 @@ def _assemble_context(
         "finishing": db.get_artifact(project_id, "finishing", db_path=_db()),
         "benchmark_refs": benchmark_refs,
         "elements": elements,
-        "shots": db.get_artifact(project_id, "execution_shots", db_path=_db()) or [],
+        "shots": execution_shots,
         "success_criteria": packet.get("success_criteria", []),
         "bypasses": bypasses,
         "route_summary": "Higgsfield-contained",
         "route_policy": {"higgsfield_only": True},
         "post_production": (db.get_artifact(project_id, "finishing", db_path=_db()) or {}),
-        "global_ui_config": db.get_artifact(project_id, "global_ui_config", db_path=_db()),
+        "global_ui_config": global_ui_config,
     }
 
 

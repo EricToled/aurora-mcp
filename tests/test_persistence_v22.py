@@ -223,10 +223,26 @@ def test_full_multishot_path_emits_green(server_db):
     assert emit["ok"], emit.get("reason")
     ev = emit["gate_evaluation"]
     assert ev["all_clear"] is True, ev["blocking_gates"]
-    assert emit["markdown"] is not None and len(emit["markdown"]) > 0
+    md = emit["markdown"]
+    assert md is not None and len(md) > 0
     # No gate may be "fail"; every required multishot gate must be present.
     statuses = {g["name"]: g["status"] for g in ev["gates"]}
     from aurora import gates as gates_pkg
     for gate in gates_pkg.required_gates_for_mode("video_multishot"):
         assert gate in statuses, f"{gate} missing from evaluation"
         assert statuses[gate] != "fail", (gate, statuses[gate])
+
+    # --- the pack must be OPERATIVELY populated, not ceremonially green ------
+    # A green pack with blank critical sections is useless (the bug Eric caught):
+    # the validated packet's data must reach sections 5 (elements), 7 (UI), and
+    # 8 (per-shot execution instructions), and 11 (success criteria).
+    assert "violinist" in md, "section 5: element catalogue is empty"
+    assert "elem-violinist" in md, "section 5: soul_id from packet not rendered"
+    assert "warm baroque chiaroscuro" in md, "section 7: global UI style missing"
+    for n in (1, 2, 3):
+        assert f"### Shot {n}" in md, f"section 8: shot {n} not rendered"
+    assert "elem-quartet-ff" in md, "section 8: shot-1 FF anchor not rendered"
+    assert "identity stable across shots" in md, "section 11: success criteria missing"
+    # Section 8 must carry the per-shot UI config + MCSLA the operator executes.
+    assert "UI config panel por panel" in md
+    assert "MCSLA breakdown" in md
