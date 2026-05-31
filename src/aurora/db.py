@@ -951,6 +951,112 @@ def get_security_events(
         conn.close()
 
 
+def resolve_security_events(
+    project_id: Optional[str] = None,
+    component: Optional[str] = None,
+    event_type: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> int:
+    """Mark matching unresolved security events as resolved. Returns the count.
+
+    Used when a step is honestly re-attested clean after a confessed invention:
+    the prior alarm for that step is cleared so the pipeline can proceed."""
+    conn = get_conn(db_path)
+    try:
+        clauses = ["resolved_at IS NULL"]
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("project_id = ?")
+            params.append(project_id)
+        if component is not None:
+            clauses.append("component = ?")
+            params.append(component)
+        if event_type is not None:
+            clauses.append("event_type = ?")
+            params.append(event_type)
+        cur = conn.execute(
+            "UPDATE security_events SET resolved_at = ? WHERE " + " AND ".join(clauses),
+            tuple([_now_iso()] + params),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Per-step honesty attestation (anti-invention, content-level)
+# ---------------------------------------------------------------------------
+def insert_step_attestation(
+    project_id: str,
+    step: str,
+    invented: bool,
+    invented_fields: Optional[list[str]] = None,
+    sources: Any = None,
+    notes: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> str:
+    """Record a per-step honesty attestation, superseding any prior attestation
+    for the same (project, step). Returns the new attestation_id.
+
+    invented=True is a confession of fabricated content for the step; invented=
+    False seals the step as truthful. Only the latest (non-superseded) row counts
+    at emit time."""
+    attestation_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "UPDATE step_attestations SET superseded_at = ? "
+            "WHERE project_id = ? AND step = ? AND superseded_at IS NULL",
+            (_now_iso(), project_id, step),
+        )
+        conn.execute(
+            "INSERT INTO step_attestations (attestation_id, project_id, step, "
+            "invented, invented_fields, sources_json, notes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                attestation_id,
+                project_id,
+                step,
+                1 if invented else 0,
+                json.dumps(invented_fields or []),
+                json.dumps(sources) if sources is not None else None,
+                notes,
+            ),
+        )
+        conn.commit()
+        return attestation_id
+    finally:
+        conn.close()
+
+
+def get_current_step_attestations(
+    project_id: str, db_path: Optional[str | Path] = None
+) -> dict[str, dict[str, Any]]:
+    """Return {step: attestation_row} for the latest (non-superseded) attestation
+    of each step in the project."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM step_attestations "
+            "WHERE project_id = ? AND superseded_at IS NULL "
+            "ORDER BY created_at ASC, rowid ASC",
+            (project_id,),
+        ).fetchall()
+        out: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            d = dict(r)
+            if d.get("invented_fields"):
+                try:
+                    d["invented_fields"] = json.loads(d["invented_fields"])
+                except (ValueError, TypeError):
+                    d["invented_fields"] = []
+            out[d["step"]] = d
+        return out
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Gate evaluations (persist-then-read; Sección 10)
 # ---------------------------------------------------------------------------

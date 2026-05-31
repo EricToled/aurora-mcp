@@ -132,6 +132,26 @@ CREATE TABLE IF NOT EXISTS active_bypasses (
   revoked_at TIMESTAMP
 );
 
+-- Per-step HONESTY ATTESTATION (anti-invention, content-level).
+-- AURORA delivers the pipeline step by step; at the end of each content step the
+-- client must declare honestly whether it invented any of the data it placed in
+-- that step. invented=1 is a confession: it raises a SECURITY_HALT, alerts the
+-- operator, and forces the step to be redone. emit refuses to deliver the final
+-- document unless EVERY required step has a current (non-superseded) clean
+-- (invented=0) attestation. A later clean re-attestation supersedes the prior row
+-- and resolves the alarm for that step.
+CREATE TABLE IF NOT EXISTS step_attestations (
+  attestation_id TEXT PRIMARY KEY,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  project_id TEXT NOT NULL,
+  step TEXT NOT NULL,
+  invented INTEGER NOT NULL DEFAULT 0,
+  invented_fields TEXT,
+  sources_json TEXT,
+  notes TEXT,
+  superseded_at TIMESTAMP
+);
+
 -- Persisted gate evaluations (Sección 10, persist-then-read). A validate_*/
 -- check_* tool records its verdict + the input snapshot here so that
 -- emit_execution_pack reads the recorded decision instead of re-evaluating a
@@ -261,3 +281,4 @@ CREATE INDEX IF NOT EXISTS idx_gate_eval_project ON gate_evaluations(project_id,
 CREATE INDEX IF NOT EXISTS idx_workflows_domain ON workflows_cache(domain, sub_domain, style);
 CREATE INDEX IF NOT EXISTS idx_syntax_cache_model ON platform_syntax_cache(model_id, output_type, fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_security_events_project ON security_events(project_id, resolved_at);
+CREATE INDEX IF NOT EXISTS idx_step_attestations_project ON step_attestations(project_id, step, superseded_at);

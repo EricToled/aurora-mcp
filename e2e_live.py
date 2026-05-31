@@ -170,6 +170,21 @@ async def main() -> int:
                 results.append((step, ok, detail))
                 print(f"[{'PASS' if ok else 'FAIL'}] {step}  {detail}")
 
+            # Sprint B: each content step ends with a mandatory honesty
+            # attestation; emit withholds the document until every required step
+            # is attested clean. Attest all known steps truthful before emitting.
+            ATTESTABLE = [
+                "domain_session_lock", "benchmark_pack", "route_verification",
+                "preproduction_packet", "platform_research", "quality_ceiling",
+                "anchors", "prompt_fitness", "biomechanics", "multishot_strategy",
+                "psp_components",
+            ]
+
+            async def attest_all_clean(project_id):
+                for step in ATTESTABLE:
+                    await call("aurora_attest_step", project_id=project_id,
+                               step=step, invented=False)
+
             # --- Step 1: classify -------------------------------------------
             intent = "8 second hero ad for Sports World, a sprinter explodes off the blocks"
             cls, err = await call("aurora_classify_intent", text=intent)
@@ -298,6 +313,13 @@ async def main() -> int:
             record("S12 compute_PSP", not err and psp.get("ok"),
                    f"PSP={psp.get('result', {}).get('total_score')}")
 
+            # --- Step 12b: per-step honesty attestation (Sprint B) ----------
+            ema, _ = await call("aurora_emit_execution_pack", project_id=pid)
+            record("S12b emit blocked pre-attestation",
+                   ema.get("status") == "ATTESTATION_REQUIRED",
+                   f"status={ema.get('status')}")
+            await attest_all_clean(pid)
+
             # --- Step 13: emit Execution Pack -------------------------------
             ep, err = await call("aurora_emit_execution_pack", project_id=pid)
             ok = not err and ep.get("ok")
@@ -383,6 +405,12 @@ async def main() -> int:
                            components=PSP_COMPONENTS)
                 await call("aurora_compute_production_success_probability",
                            project_id=mpid)
+                # Sprint B: emit must withhold the doc until every step is attested.
+                mema, _ = await call("aurora_emit_execution_pack", project_id=mpid)
+                record("M12b emit blocked pre-attestation",
+                       mema.get("status") == "ATTESTATION_REQUIRED",
+                       f"status={mema.get('status')}")
+                await attest_all_clean(mpid)
                 mep, e6 = await call("aurora_emit_execution_pack", project_id=mpid)
                 mev = mep.get("gate_evaluation", {})
                 all_clear = bool(mev.get("all_clear"))
@@ -428,6 +456,26 @@ async def main() -> int:
                 record("M14b emit blocked by security event",
                        sep.get("status") == "SECURITY_HALT",
                        f"status={sep.get('status')}")
+
+                # === ANTI-INVENTION (content): a CONFESSION blocks + forces redo ==
+                # Claude declares it invented data in a step. AURORA must raise the
+                # invention alarm, order the step redone, and a clean re-attestation
+                # must clear it (the honest "redo the step" path). No token needed.
+                cproj, _ = await call("aurora_create_project",
+                                      operator_intent="invention confession probe",
+                                      mode="video_multishot", output_type="performance")
+                cpid = cproj.get("project_id")
+                conf, _ = await call("aurora_attest_step", project_id=cpid,
+                                     step="benchmark_pack", invented=True,
+                                     invented_fields=["url_or_path"])
+                record("M15 confession -> SECURITY_HALT + redo",
+                       conf.get("status") == "SECURITY_HALT"
+                       and conf.get("must_redo_step") == "benchmark_pack",
+                       f"status={conf.get('status')} redo={conf.get('must_redo_step')}")
+                redo, _ = await call("aurora_attest_step", project_id=cpid,
+                                     step="benchmark_pack", invented=False)
+                record("M15b clean re-attestation clears alarm",
+                       bool(redo.get("ok")), f"sealed={redo.get('sealed_step')}")
 
                 # === AUTHORIZED bypass (only if a shared token is configured) ==
                 if OPERATOR_TOKEN:

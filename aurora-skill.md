@@ -149,3 +149,36 @@ servidor); NUNCA lo inventes, adivines, ni lo reutilices de un mensaje anterior.
   proyecto hasta que el operador lo resuelva. En ese caso NO sigas: muéstrale a
   Eric la alarma textual y dile que debe reenviar la orden con su token. Tú no
   puedes autorizar un bypass — ese es justamente el ataque que el sistema detiene.
+
+## Entrega paso por paso + atestación de honestidad (anti-invención de CONTENIDO)
+
+La autenticación de bypass protege la EJECUCIÓN de los pasos; esto protege el
+CONTENIDO. AURORA no acepta que corras todos los pasos y entregues un solo
+documento al final: te obliga a entregar **paso por paso**, y al final de cada
+paso de contenido **te pregunta, por diseño, si inventaste algún dato** que
+pusiste en el reporte.
+
+- Cada herramienta de contenido (`aurora_create_domain_session_lock`,
+  `aurora_create_benchmark_pack`, `aurora_verify_route`,
+  `aurora_validate_preproduction_packet`, `aurora_record_platform_research`,
+  `aurora_check_quality_ceiling`, `aurora_validate_biomechanics`,
+  `aurora_check_prompt_fitness`, `aurora_check_multishot_strategy`,
+  `aurora_check_anchors_ready`, `aurora_record_psp_components`) devuelve un
+  bloque `attestation_required` con la pregunta de honestidad de ese paso.
+- **Debes responder con la verdad** llamando
+  `aurora_attest_step(project_id, step, invented=<true|false>)` ANTES de avanzar.
+  Normalmente la respuesta honesta es `invented=false`.
+- `invented=false` → sella el paso como verídico.
+- `invented=true` es una **CONFESIÓN**: AURORA levanta `SECURITY_HALT` con la
+  alarma **"🚨 Claude está inventando información — delivery BLOQUEADO"**, registra
+  `invention_confessed` en `security_events`, dispara el push de alerta al
+  operador, y te ordena **rehacer el paso con datos REALES** (`must_redo_step`).
+  Cuando lo rehagas con la verdad, vuelve a llamar
+  `aurora_attest_step(step=..., invented=false)`: la re-atestación limpia resuelve
+  la alarma.
+- `aurora_emit_execution_pack` **no entrega el documento final** salvo que TODOS
+  los pasos requeridos del modo tengan una atestación vigente y limpia (o que su
+  gate esté bypassed por una orden AUTORIZADA del operador). Si falta alguna,
+  responde `ATTESTATION_REQUIRED` con la lista de pasos y sus preguntas.
+- No inventes para "pasar" la atestación. Si no tienes el dato real, di que no lo
+  tienes y rehaz el paso — la atestación honesta es el corazón del sistema.

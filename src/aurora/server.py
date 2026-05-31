@@ -106,6 +106,148 @@ _SCORE_TYPE_CANON = {
     "production_probability": "production_probability",
 }
 
+# ---------------------------------------------------------------------------
+# Per-step HONESTY ATTESTATION registry (anti-invention, content-level).
+#
+# AURORA delivers the pipeline step by step. At the end of each CONTENT step the
+# client must declare — honestly — whether it invented any of the data it placed
+# in that step. Each step maps to the gate it backs, so a step is only REQUIRED
+# for a mode when its gate is required for that mode. The question is what AURORA
+# "asks by design" at the end of the step.
+# ---------------------------------------------------------------------------
+_ATTESTABLE_STEPS: dict[str, dict[str, str]] = {
+    "domain_session_lock": {
+        "gate": "gate_domain_session_lock",
+        "question": (
+            "¿Inventaste el dominio, sub-dominio o sus implicaciones físicas, o "
+            "salen de la intención real del operador?"
+        ),
+    },
+    "benchmark_pack": {
+        "gate": "gate_benchmark_pack",
+        "question": (
+            "¿Inventaste URLs, rasgos visuales o razones de los benchmarks? ¿Las "
+            "referencias existen realmente y las viste?"
+        ),
+    },
+    "route_verification": {
+        "gate": "gate_route_verification",
+        "question": (
+            "¿Inventaste la verificación de ruta (que el modelo soporta esa "
+            "feature por MCP/UI), o la verificaste contra Higgsfield real?"
+        ),
+    },
+    "preproduction_packet": {
+        "gate": "gate_preproduction_packet",
+        "question": (
+            "¿Inventaste algún dato del preproduction packet (shots, personajes, "
+            "locación, props, acción, duración)?"
+        ),
+    },
+    "platform_research": {
+        "gate": "gate_platform_syntax_researched",
+        "question": (
+            "¿Inventaste la sintaxis del modelo, sus parámetros o las fuentes de "
+            "research? ¿Las fuentes existen y realmente dicen eso?"
+        ),
+    },
+    "quality_ceiling": {
+        "gate": "gate_step_0_quality_ceiling",
+        "question": (
+            "¿Inventaste los scores de calidad? ¿Realmente viste la imagen/video "
+            "generado para asignarlos, o los rellenaste?"
+        ),
+    },
+    "anchors": {
+        "gate": "gate_anchors_audited",
+        "question": (
+            "¿Inventaste el estado de auditoría de las anclas o algún "
+            "higgsfield_element_id/soul_id? ¿Existen en la cuenta real?"
+        ),
+    },
+    "prompt_fitness": {
+        "gate": "gate_prompt_fitness",
+        "question": (
+            "¿Inventaste el prompt final o su evaluación de fitness?"
+        ),
+    },
+    "biomechanics": {
+        "gate": "gate_biomechanical_sanity",
+        "question": (
+            "¿Inventaste el análisis biomecánico del movimiento o sus scores?"
+        ),
+    },
+    "multishot_strategy": {
+        "gate": "gate_multishot_anchor_strategy",
+        "question": (
+            "¿Inventaste la estrategia de anclas/continuidad entre shots?"
+        ),
+    },
+    "psp_components": {
+        "gate": "gate_production_success_probability",
+        "question": (
+            "¿Inventaste los componentes del Production Success Probability?"
+        ),
+    },
+}
+
+# gate name -> step name (reverse index)
+_GATE_TO_STEP = {v["gate"]: k for k, v in _ATTESTABLE_STEPS.items()}
+
+_INVENTION_ALARM = "🚨 Claude está inventando información — delivery BLOQUEADO"
+
+
+def _required_steps_for_mode(mode: str) -> list[str]:
+    """The content steps that must be honestly attested for a given mode — the
+    subset of _ATTESTABLE_STEPS whose backing gate is required for the mode."""
+    from .gates import required_gates_for_mode
+
+    required_gates = set(required_gates_for_mode(mode))
+    return [s for s, meta in _ATTESTABLE_STEPS.items() if meta["gate"] in required_gates]
+
+
+def _attestation_directive(project_id: str, step: str) -> dict[str, Any]:
+    """The mandatory honesty question AURORA appends to a content step's result
+    so the client must attest before the step counts toward delivery."""
+    meta = _ATTESTABLE_STEPS.get(step, {})
+    return {
+        "step": step,
+        "question": meta.get("question", "¿Inventaste algún dato de este paso?"),
+        "how": (
+            "Llama aurora_attest_step(project_id, step="
+            f"'{step}', invented=<true|false>, invented_fields=[...]). "
+            "Responde con la verdad: si inventaste cualquier dato, pon "
+            "invented=true. AURORA bloqueará la entrega y deberás rehacer el paso."
+        ),
+        "mandatory": True,
+    }
+
+
+def _emit_push_alert(title: str, message: str, project_id: Optional[str] = None) -> bool:
+    """Best-effort OUT-OF-BAND alert to the operator. POSTs to AURORA_PUSH_WEBHOOK
+    if configured (e.g. an ntfy/Pushover/Telegram-bridge URL). Never raises and
+    never blocks the halt; returns True only if an alert was actually sent.
+
+    The webhook URL is read from the environment (never hard-coded). When unset,
+    the alarm still hard-blocks locally — the push is an additional channel."""
+    url = os.environ.get("AURORA_PUSH_WEBHOOK")
+    if not url:
+        return False
+    try:
+        import json as _json
+        import urllib.request
+
+        payload = _json.dumps(
+            {"title": title, "message": message, "project_id": project_id}
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}
+        )
+        urllib.request.urlopen(req, timeout=5)  # noqa: S310 - operator-set URL
+        return True
+    except Exception:  # pragma: no cover - never let the push mask the halt
+        return False
+
 
 def _ensure_db() -> None:
     # Idempotent: schema uses CREATE TABLE IF NOT EXISTS, so this both
@@ -364,7 +506,10 @@ def aurora_create_domain_session_lock(
         domain_session_lock_json=lock_data,
         current_phase="domain_locked",
     )
-    return {"ok": True, "project_id": project_id, "domain": domain, "sub_domain": sub}
+    return {
+        "ok": True, "project_id": project_id, "domain": domain, "sub_domain": sub,
+        "attestation_required": _attestation_directive(project_id, "domain_session_lock"),
+    }
 
 
 @mcp.tool()
@@ -388,7 +533,10 @@ def aurora_create_benchmark_pack(
                 db_path=_db(),
             )
         )
-    return {"ok": True, "project_id": project_id, "benchmark_ids": ids}
+    return {
+        "ok": True, "project_id": project_id, "benchmark_ids": ids,
+        "attestation_required": _attestation_directive(project_id, "benchmark_pack"),
+    }
 
 
 @mcp.tool()
@@ -455,7 +603,9 @@ def aurora_validate_preproduction_packet(
         evaluator_version="preproduction/2.2",
         db_path=_db(),
     )
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "preproduction_packet")
+    return out
 
 
 # ===========================================================================
@@ -483,7 +633,10 @@ def aurora_verify_route(
         confidence=float(route_data.get("confidence", 0.0)),
         db_path=_db(),
     )
-    return {"ok": True, "project_id": project_id, "decision": decision}
+    return {
+        "ok": True, "project_id": project_id, "decision": decision,
+        "attestation_required": _attestation_directive(project_id, "route_verification"),
+    }
 
 
 # ===========================================================================
@@ -729,6 +882,7 @@ def aurora_record_platform_research(
         "expires_in_days": ttl_days,
         "confidence": confidence,
         "sources_count": len(sources),
+        "attestation_required": _attestation_directive(project_id, "platform_research"),
     }
 
 
@@ -1058,7 +1212,9 @@ def aurora_check_quality_ceiling(project_id: str) -> dict[str, Any]:
     }
     result = gate_step_0_quality_ceiling.check(context)
     _record_gate_eval(project_id, "gate_step_0_quality_ceiling", result)
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "quality_ceiling")
+    return out
 
 
 @mcp.tool()
@@ -1073,7 +1229,9 @@ def aurora_validate_biomechanics(
         project_id, "gate_biomechanical_sanity", result, packet=motion_plan,
         evaluator_version="biomechanics/2.2",
     )
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "biomechanics")
+    return out
 
 
 @mcp.tool()
@@ -1089,7 +1247,9 @@ def aurora_check_prompt_fitness(
         project_id, "gate_prompt_fitness", result, packet=prompt_packet,
         evaluator_version=prompt_fitness_score.EVALUATOR_VERSION,
     )
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "prompt_fitness")
+    return out
 
 
 @mcp.tool()
@@ -1113,7 +1273,9 @@ def aurora_check_multishot_strategy(
         project_id, "gate_continuity_readiness", continuity, packet=shot_list,
         evaluator_version="continuity/2.2",
     )
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "multishot_strategy")
+    return out
 
 
 @mcp.tool()
@@ -1132,7 +1294,9 @@ def aurora_check_anchors_ready(project_id: str) -> dict[str, Any]:
         }
     result = gate_anchors_audited.check(state)
     _record_gate_eval(project_id, "gate_anchors_audited", result)
-    return result.model_dump()
+    out = result.model_dump()
+    out["attestation_required"] = _attestation_directive(project_id, "anchors")
+    return out
 
 
 @mcp.tool()
@@ -1175,7 +1339,99 @@ def aurora_record_psp_components(
     """Record the 7 PSP components so the probability can be computed later."""
     _ensure_db()
     db.put_artifact(project_id, "psp_components", components or {}, db_path=_db())
-    return {"ok": True, "project_id": project_id}
+    out = {"ok": True, "project_id": project_id}
+    out["attestation_required"] = _attestation_directive(project_id, "psp_components")
+    return out
+
+
+# ===========================================================================
+# 6c. Per-step honesty attestation (anti-invention, content-level)
+# ===========================================================================
+@mcp.tool()
+def aurora_attest_step(
+    project_id: str,
+    step: str,
+    invented: bool,
+    invented_fields: Optional[list[str]] = None,
+    sources: Optional[dict[str, Any]] = None,
+    notes: str = "",
+) -> dict[str, Any]:
+    """HONESTY CHECKPOINT — AURORA pregunta esto al final de cada paso de contenido.
+
+    Declara con la verdad si inventaste algún dato del paso ``step`` (uno de los
+    pasos de contenido, p.ej. 'benchmark_pack', 'preproduction_packet',
+    'route_verification', 'quality_ceiling', 'platform_research', ...).
+
+    - invented=False: sella el paso como verídico. Si había una alarma previa por
+      este paso (una confesión anterior), una re-atestación limpia la resuelve —
+      es el camino de "rehacer el paso" honestamente.
+    - invented=True: es una CONFESIÓN. AURORA levanta un SECURITY_HALT, alerta al
+      operador (push si está configurado), BLOQUEA la entrega del documento final
+      y obliga a rehacer el paso con datos reales antes de continuar.
+
+    emit_execution_pack NO entrega el documento salvo que TODOS los pasos
+    requeridos del modo tengan una atestación limpia y vigente."""
+    _ensure_db()
+    project = db.get_project(project_id, db_path=_db())
+    if not project:
+        return {"ok": False, "reason": f"unknown project: {project_id}"}
+    if step not in _ATTESTABLE_STEPS:
+        return {
+            "ok": False,
+            "reason": f"unknown step '{step}'",
+            "valid_steps": sorted(_ATTESTABLE_STEPS.keys()),
+        }
+
+    db.insert_step_attestation(
+        project_id=project_id,
+        step=step,
+        invented=bool(invented),
+        invented_fields=invented_fields or [],
+        sources=sources,
+        notes=notes or None,
+        db_path=_db(),
+    )
+
+    if invented:
+        # Confession: alarm + hard block + (out-of-band) push, force redo.
+        fields = invented_fields or []
+        detail_msg = (
+            f"Claude confesó haber inventado datos en el paso '{step}'"
+            + (f": {', '.join(fields)}" if fields else "")
+            + (f". Nota: {notes}" if notes else "")
+        )
+        _emit_push_alert(
+            title=_INVENTION_ALARM,
+            message=detail_msg,
+            project_id=project_id,
+        )
+        halt = _security_halt(
+            alarm=_INVENTION_ALARM,
+            violations=[detail_msg],
+            project_id=project_id,
+            component=step,
+            event_type="invention_confessed",
+        )
+        halt["operator_action_required"] = (
+            f"El paso '{step}' contiene información inventada. AURORA bloqueó la "
+            "entrega. Rehaz el paso con datos REALES y vuelve a llamar "
+            f"aurora_attest_step(step='{step}', invented=false) cuando sea verídico."
+        )
+        halt["must_redo_step"] = step
+        return halt
+
+    # Clean attestation: seal the step and clear any prior alarm for it.
+    db.resolve_security_events(
+        project_id=project_id, component=step,
+        event_type="invention_confessed", db_path=_db(),
+    )
+    return {
+        "ok": True,
+        "sealed_step": step,
+        "invented": False,
+        "project_id": project_id,
+        "note": "Paso atestado como verídico.",
+    }
 
 
 # ===========================================================================
@@ -1245,6 +1501,60 @@ def aurora_emit_execution_pack(
     result = execution_pack_builder.build_execution_pack(
         project_view, context, mode, active_bypasses=active, recorded=recorded
     )
+
+    # ANTI-INVENTION (content-level): once the SHAPE gates pass, every required
+    # content step must also carry a CURRENT, CLEAN honesty attestation before
+    # the final document is delivered — unless its backing gate is bypassed by an
+    # AUTHORIZED operator override. This is the teeth behind "no se entrega un
+    # solo documento al final": each step is attested individually for TRUTH, and
+    # emit refuses to render otherwise. We only enforce this after the normal gate
+    # evaluation passes, so a missing/blocked gate still surfaces its own verdict.
+    if result.get("ok"):
+        attestations = db.get_current_step_attestations(project_id, db_path=_db())
+        bypass_all = "all" in active
+        missing_attestation: list[str] = []
+        confessed: list[str] = []
+        for step in _required_steps_for_mode(mode):
+            gate = _ATTESTABLE_STEPS[step]["gate"]
+            if bypass_all or gate in active:
+                continue  # operator authorized skipping this gate's content
+            att = attestations.get(step)
+            if att is None:
+                missing_attestation.append(step)
+            elif att.get("invented"):
+                confessed.append(step)
+        if confessed:
+            return _security_halt(
+                alarm=_INVENTION_ALARM,
+                violations=[
+                    f"el paso '{s}' está marcado como inventado y no se ha rehecho"
+                    for s in confessed
+                ],
+                project_id=project_id,
+                event_type="emit_blocked_invention",
+            )
+        if missing_attestation:
+            return {
+                "ok": False,
+                "status": "ATTESTATION_REQUIRED",
+                "reason": (
+                    "Faltan atestaciones de honestidad por paso antes de entregar "
+                    "el documento. AURORA exige declarar paso por paso si hubo "
+                    "invención."
+                ),
+                "project_id": project_id,
+                "missing_attestations": missing_attestation,
+                "how": (
+                    "Por cada paso pendiente llama "
+                    "aurora_attest_step(project_id, step, invented=<true|false>). "
+                    "El documento sólo se entrega cuando todos los pasos requeridos "
+                    "están atestados como verídicos."
+                ),
+                "questions": {
+                    s: _ATTESTABLE_STEPS[s]["question"] for s in missing_attestation
+                },
+            }
+
     if result["ok"]:
         anchors = context.get("anchor_state") or {}
         pack_id = db.insert_execution_pack(
@@ -1683,6 +1993,7 @@ _EXPECTED_TABLES = {
     "workflows_cache",
     "platform_syntax_cache",
     "security_events",
+    "step_attestations",
 }
 
 _REQUIRED_TOOLS = {
@@ -1705,6 +2016,7 @@ _REQUIRED_TOOLS = {
     "aurora_check_multishot_strategy",
     "aurora_check_anchors_ready",
     "aurora_compute_production_success_probability",
+    "aurora_attest_step",
     "aurora_skip_finishing",
     "aurora_emit_execution_pack",
     "aurora_log_bypass",

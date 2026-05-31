@@ -165,6 +165,16 @@ def _drive_multishot_to_psp(pid: str) -> None:
         "gate_compliance", "route_verification", "benchmark_match", "anchor_quality",
         "biomechanical_plausibility", "continuity_readiness", "prompt_fitness")})
     srv.aurora_compute_production_success_probability(pid)
+    # Sprint B: each content step ends with a mandatory honesty attestation.
+    # Drive them all clean so emit can deliver the document.
+    _attest_all_clean(pid)
+
+
+def _attest_all_clean(pid: str) -> None:
+    """Attest every required content step as truthful (invented=False) so the
+    content-level anti-invention gate lets emit deliver."""
+    for step in srv._required_steps_for_mode(srv.db.get_project(pid, db_path=srv._db())["mode"]):
+        srv.aurora_attest_step(pid, step, invented=False)
 
 
 # --- Bug #7: prompt fitness on a real packet --------------------------------
