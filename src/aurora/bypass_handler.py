@@ -198,13 +198,19 @@ def log_bypass(
     project_id: Optional[str] = None,
     related_job_id: Optional[str] = None,
     db_path: Optional[str] = None,
+    authorized: bool = False,
 ) -> str:
     """Write a bypass directive to the SQLite bypass_log. Returns bypass_id.
 
     persist-scoped directives also update the session state file.
+
+    Only AUTHORIZED bypasses (accompanied by a valid operator token) take effect:
+    an unauthorized directive is still written to the audit trail but is never
+    promoted to a persist bypass and is filtered out at read time, so Claude
+    cannot forge operator consent to skip a gate (anti-invention).
     """
     scope = directive.scope
-    if scope == "persist" and not directive.revoke:
+    if scope == "persist" and not directive.revoke and authorized:
         _set_persist_bypass(directive.component, directive.reason)
 
     bypass_id = db.insert_bypass_log(
@@ -216,6 +222,7 @@ def log_bypass(
         project_id=project_id,
         related_job_id=related_job_id,
         job_outcome="pending",
+        authorized=authorized,
     )
     return bypass_id
 

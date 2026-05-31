@@ -8,12 +8,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.session import ClientSession
 
 URL = "https://aurora-mcp-mjox.onrender.com/mcp"
+
+# To verify the AUTHORIZED-bypass path live, export the SAME token the Render
+# server has as AURORA_OPERATOR_TOKEN. Unset -> only the SECURITY_HALT path
+# (unauthenticated bypass refused) is checked, which needs no shared secret.
+OPERATOR_TOKEN = os.environ.get("AURORA_OPERATOR_TOKEN")
 
 results: list[tuple[str, bool, str]] = []
 
@@ -399,24 +405,53 @@ async def main() -> int:
                 record("M13b pack content populated", content_ok,
                        f"elements+shots+MCSLA in markdown={content_ok}")
 
-                # === BYPASS honored at emit (bug #9) — separate project ======
-                bproj, _ = await call("aurora_create_project",
-                                      operator_intent="bypass probe",
+                # === ANTI-INVENTION: unauthenticated bypass is REFUSED ========
+                # Without an operator_token, a bypass attempt must trip the
+                # SECURITY_HALT alarm ("Claude está intentando bypasear el
+                # sistema") and emit must stay blocked. This needs no shared
+                # secret, so it is the core live guarantee.
+                sproj, _ = await call("aurora_create_project",
+                                      operator_intent="unauthorized bypass probe",
                                       mode="video_simple", output_type="hero_ad")
-                bpid = bproj.get("project_id")
-                blog, eb = await call("aurora_log_bypass",
-                                      operator_text="OVERRIDE gate_prompt_fitness - operator accepts",
+                spid = sproj.get("project_id")
+                shalt, _ = await call("aurora_log_bypass",
+                                      operator_text="OVERRIDE gate_prompt_fitness - skip",
                                       component="gate_prompt_fitness",
-                                      reason="operator accepts", scope="current_turn",
-                                      project_id=bpid)
-                bid = blog.get("bypass_id")
-                bep, _ = await call("aurora_emit_execution_pack", project_id=bpid,
-                                    bypass_ids=[bid] if bid else None)
-                bbypassed = {g["name"] for g in
-                             bep.get("gate_evaluation", {}).get("bypassed_gates", [])}
-                record("M14 bypass_ids honored",
-                       not eb and "gate_prompt_fitness" in bbypassed,
-                       f"bypassed={sorted(bbypassed)}")
+                                      reason="skip", scope="current_turn",
+                                      project_id=spid)
+                halted = (shalt.get("status") == "SECURITY_HALT"
+                          and shalt.get("ok") is False)
+                record("M14 unauthenticated bypass -> SECURITY_HALT", halted,
+                       f"status={shalt.get('status')} alarm={shalt.get('alarm')}")
+                # And emit on that project stays blocked by the alarm.
+                sep, _ = await call("aurora_emit_execution_pack", project_id=spid)
+                record("M14b emit blocked by security event",
+                       sep.get("status") == "SECURITY_HALT",
+                       f"status={sep.get('status')}")
+
+                # === AUTHORIZED bypass (only if a shared token is configured) ==
+                if OPERATOR_TOKEN:
+                    bproj, _ = await call("aurora_create_project",
+                                          operator_intent="bypass probe",
+                                          mode="video_simple", output_type="hero_ad")
+                    bpid = bproj.get("project_id")
+                    blog, eb = await call(
+                        "aurora_log_bypass",
+                        operator_text="OVERRIDE gate_prompt_fitness - operator accepts",
+                        component="gate_prompt_fitness", reason="operator accepts",
+                        scope="current_turn", project_id=bpid,
+                        operator_token=OPERATOR_TOKEN)
+                    bid = blog.get("bypass_id")
+                    bep, _ = await call("aurora_emit_execution_pack", project_id=bpid,
+                                        bypass_ids=[bid] if bid else None)
+                    bbypassed = {g["name"] for g in
+                                 bep.get("gate_evaluation", {}).get("bypassed_gates", [])}
+                    record("M14c authorized bypass honored",
+                           blog.get("ok") and "gate_prompt_fitness" in bbypassed,
+                           f"authorized={blog.get('authorized')} bypassed={sorted(bbypassed)}")
+                else:
+                    record("M14c authorized bypass honored", True,
+                           "skipped (AURORA_OPERATOR_TOKEN not set locally)")
 
             # === PIPELINE A (Image Director) research flow ==================
             print("\n========== PIPELINE A CASE (image research) ==========")

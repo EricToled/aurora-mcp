@@ -45,12 +45,14 @@ def test_bypass_unblocks_emit_for_every_required_gate(tmp_path, monkeypatch):
     # Execution Pack emit even with an otherwise-empty project.
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "bypass.db")
     monkeypatch.setattr(bypass_handler, "SESSION_STATE_PATH", tmp_path / "session.json")
+    monkeypatch.setenv("AURORA_OPERATOR_TOKEN", "coherence-token")
     srv._ensure_db()
     pid = srv.aurora_create_project("intent", "video_multishot", "hero_ad")["project_id"]
     for gate in gates_pkg.required_gates_for_mode("video_multishot"):
         res = srv.aurora_log_bypass(
             operator_text=f"OVERRIDE PERSIST: {gate} - coherence test",
             component=gate, reason="coherence test", scope="persist",
+            operator_token="coherence-token",
         )
         assert res["ok"], (gate, res)
         assert res["component"] == gate
@@ -61,10 +63,12 @@ def test_bypass_unblocks_emit_for_every_required_gate(tmp_path, monkeypatch):
 def test_bypass_all_covers_every_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "all.db")
     monkeypatch.setattr(bypass_handler, "SESSION_STATE_PATH", tmp_path / "s.json")
+    monkeypatch.setenv("AURORA_OPERATOR_TOKEN", "coherence-token")
     srv._ensure_db()
     pid = srv.aurora_create_project("intent", "video_simple", "hero_ad")["project_id"]
     srv.aurora_log_bypass(operator_text="BYPASS AURORA - operator override",
-                          component="all", reason="operator override", scope="persist")
+                          component="all", reason="operator override", scope="persist",
+                          operator_token="coherence-token")
     emit = srv.aurora_emit_execution_pack(pid)
     assert emit["ok"], emit.get("reason")
 

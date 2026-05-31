@@ -117,6 +117,64 @@ def _db() -> str:
     return str(DB_PATH)
 
 
+# ---------------------------------------------------------------------------
+# Anti-invention enforcement: authenticated override + SECURITY_HALT
+# ---------------------------------------------------------------------------
+def _expected_operator_token() -> Optional[str]:
+    """The operator token, read from the environment at call time (never
+    hard-coded). When unset, authenticated overrides are DISABLED (fail-closed):
+    no bypass can be authorized, so every gate must genuinely pass."""
+    tok = os.environ.get("AURORA_OPERATOR_TOKEN")
+    return tok.strip() if tok and tok.strip() else None
+
+
+def _token_is_valid(operator_token: Optional[str]) -> bool:
+    expected = _expected_operator_token()
+    if not expected:
+        return False
+    return bool(operator_token) and operator_token.strip() == expected
+
+
+def _security_halt(
+    alarm: str,
+    violations: list[str],
+    *,
+    project_id: Optional[str] = None,
+    component: Optional[str] = None,
+    event_type: str = "unauthorized_bypass_attempt",
+    record: bool = True,
+) -> dict[str, Any]:
+    """Build the SECURITY_HALT response and (by default) persist the alarm.
+
+    This is the literal "Claude está intentando bypasear el sistema" alarm:
+    a hard block that refuses to proceed and leaves a tamper-evident trail in
+    security_events so emit stays halted until the operator resolves it."""
+    if record:
+        try:
+            db.insert_security_event(
+                event_type=event_type,
+                project_id=project_id,
+                component=component,
+                detail={"alarm": alarm, "violations": violations},
+                db_path=_db(),
+            )
+        except Exception:  # pragma: no cover - never let logging mask the halt
+            pass
+    return {
+        "ok": False,
+        "status": "SECURITY_HALT",
+        "alarm": alarm,
+        "violations": violations,
+        "project_id": project_id,
+        "component": component,
+        "operator_action_required": (
+            "AURORA detuvo la ejecución. Para autorizar un bypass legítimo, el "
+            "operador (Eric) debe reenviar la orden incluyendo el operator_token. "
+            "Claude no puede autorizar bypasses."
+        ),
+    }
+
+
 def _record_gate_eval(
     project_id: Optional[str],
     gate_name: str,
@@ -1141,6 +1199,24 @@ def aurora_emit_execution_pack(
     project = db.get_project(project_id, db_path=_db())
     if not project:
         return {"ok": False, "reason": f"unknown project: {project_id}"}
+
+    # ANTI-INVENTION: an unresolved security event (e.g. an unauthorized bypass
+    # attempt) hard-blocks emission. The alarm persists until the operator
+    # resolves it, so Claude cannot proceed by skipping a gate.
+    alarms = db.get_security_events(project_id, unresolved_only=True, db_path=_db())
+    if alarms:
+        return _security_halt(
+            alarm="🚨 Claude está intentando bypasear el sistema",
+            violations=[
+                f"{a.get('event_type')}: "
+                f"{(a.get('detail') or {}).get('alarm', a.get('component') or '')}"
+                for a in alarms
+            ],
+            project_id=project_id,
+            event_type="emit_blocked_by_security_event",
+            record=False,
+        )
+
     mode = project.get("mode") or "image"
     context = _assemble_context(project_id, project, elements_with_urls or {})
     recorded = db.get_latest_gate_evaluations(project_id, db_path=_db())
@@ -1149,11 +1225,14 @@ def aurora_emit_execution_pack(
     #  1. global persist/all_session active bypasses,
     #  2. current_turn bypasses logged against this project,
     #  3. explicit bypass_ids the caller chose to apply.
+    # All three only ever contain AUTHORIZED bypasses: active_bypasses is only
+    # written for authorized directives, get_logged_bypasses_for_project filters
+    # authorized=1, and the bypass_ids path below checks the authorized flag.
     active = db.get_active_bypasses(db_path=_db())
     active.update(db.get_logged_bypasses_for_project(project_id, db_path=_db()))
     for bid in bypass_ids or []:
         row = db.get_bypass_log(bid, db_path=_db())
-        if row and row.get("component_bypassed"):
+        if row and row.get("component_bypassed") and row.get("authorized"):
             comp = bypass_handler.canonical_component(row["component_bypassed"])
             active[comp] = row.get("reason") or "operator bypass"
 
@@ -1190,11 +1269,18 @@ def aurora_log_bypass(
     reason: Optional[str] = None,
     scope: Optional[str] = None,
     project_id: Optional[str] = None,
+    operator_token: Optional[str] = None,
 ) -> dict[str, Any]:
     """Register an operator bypass directive (Sección K). When component/reason
     are omitted, the directive is parsed from operator_text. Pass project_id to
     scope the bypass to a project so emit honors it (bug #9); the returned
-    bypass_id can also be passed to aurora_emit_execution_pack(bypass_ids=[...])."""
+    bypass_id can also be passed to aurora_emit_execution_pack(bypass_ids=[...]).
+
+    ANTI-INVENTION: a bypass only TAKES EFFECT when ``operator_token`` matches the
+    server's AURORA_OPERATOR_TOKEN — proof the human operator (Eric), not Claude,
+    authorized skipping a gate. Without a valid token the directive is recorded
+    UNauthorized (never honored at emit) and a SECURITY_HALT alarm is raised:
+    'Claude está intentando bypasear el sistema'."""
     _ensure_db()
     if not component or not reason:
         parsed = bypass_handler.parse_bypass(operator_text or "")
@@ -1213,17 +1299,45 @@ def aurora_log_bypass(
     # Store under the canonical gate name so the bypass actually takes effect
     # when build_execution_pack evaluates gates by canonical name.
     component = bypass_handler.canonical_component(component)
+
+    authorized = _token_is_valid(operator_token)
     directive = bypass_handler.BypassDirective(
         component=component,
         reason=reason,
         scope=scope,  # type: ignore[arg-type]
         detected_in_text=operator_text or f"{component} - {reason}",
     )
-    bypass_id = bypass_handler.log_bypass(directive, project_id=project_id, db_path=_db())
+    # Always write the audit row (authorized flag tells the truth). An
+    # unauthorized attempt is recorded but never honored downstream.
+    bypass_id = bypass_handler.log_bypass(
+        directive, project_id=project_id, db_path=_db(), authorized=authorized
+    )
+
+    if not authorized:
+        token_configured = _expected_operator_token() is not None
+        violation = (
+            "Bypass attempted without a valid operator_token "
+            f"(component={component}, scope={scope})."
+        )
+        if not token_configured:
+            violation += (
+                " AURORA_OPERATOR_TOKEN is not configured on the server, so NO "
+                "bypass can be authorized (fail-closed)."
+            )
+        return _security_halt(
+            alarm="🚨 Claude está intentando bypasear el sistema",
+            violations=[violation],
+            project_id=project_id,
+            component=component,
+            event_type="unauthorized_bypass_attempt",
+        )
+
+    # Authorized: promote persist/all_session to an active bypass.
     if scope in ("persist", "all_session"):
         db.set_active_bypass(component, scope, reason, project_id=project_id, db_path=_db())
     return {
         "ok": True,
+        "authorized": True,
         "bypass_id": bypass_id,
         "scope": scope,
         "component": component,
@@ -1568,6 +1682,7 @@ _EXPECTED_TABLES = {
     "jobs",
     "workflows_cache",
     "platform_syntax_cache",
+    "security_events",
 }
 
 _REQUIRED_TOOLS = {

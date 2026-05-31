@@ -101,7 +101,26 @@ CREATE TABLE IF NOT EXISTS bypass_log (
   reason TEXT NOT NULL,
   scope TEXT NOT NULL CHECK(scope IN ('current_turn','persist','all_session')),
   related_job_id TEXT,
-  job_outcome TEXT
+  job_outcome TEXT,
+  -- A bypass only takes effect when authorized=1, which requires a valid
+  -- operator token (AURORA_OPERATOR_TOKEN). An unauthenticated bypass request
+  -- never reaches this table — it is recorded in security_events instead.
+  authorized INTEGER NOT NULL DEFAULT 0
+);
+
+-- Tamper-evident record of anti-invention violations: an unauthenticated bypass
+-- attempt, a reference to an invented (unregistered) model, a fabricated research
+-- source, etc. emit reads this table and HALTS (SECURITY_HALT) when an unresolved
+-- event exists, so a client cannot quietly slip a forged step past the gates.
+CREATE TABLE IF NOT EXISTS security_events (
+  event_id TEXT PRIMARY KEY,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  project_id TEXT,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'halt',
+  component TEXT,
+  detail_json TEXT,
+  resolved_at TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS active_bypasses (
@@ -241,3 +260,4 @@ CREATE INDEX IF NOT EXISTS idx_bypass_project ON bypass_log(project_id);
 CREATE INDEX IF NOT EXISTS idx_gate_eval_project ON gate_evaluations(project_id, gate_name);
 CREATE INDEX IF NOT EXISTS idx_workflows_domain ON workflows_cache(domain, sub_domain, style);
 CREATE INDEX IF NOT EXISTS idx_syntax_cache_model ON platform_syntax_cache(model_id, output_type, fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_project ON security_events(project_id, resolved_at);

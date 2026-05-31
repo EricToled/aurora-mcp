@@ -19,12 +19,15 @@ from aurora import bypass_handler, db
 from aurora import server as srv
 from aurora.gates import gate_platform_syntax_researched as gate
 
+OPERATOR_TOKEN = "test-operator-token"
+
 
 # --- fixtures / helpers -----------------------------------------------------
 @pytest.fixture()
 def server_db(tmp_path, monkeypatch):
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "v23.db")
     monkeypatch.setattr(bypass_handler, "SESSION_STATE_PATH", tmp_path / "session.json")
+    monkeypatch.setenv("AURORA_OPERATOR_TOKEN", OPERATOR_TOKEN)
     srv._ensure_db()
     return srv.DB_PATH
 
@@ -277,7 +280,7 @@ def test_emit_research_gate_is_bypassable(server_db):
     res = srv.aurora_log_bypass(
         operator_text="OVERRIDE PERSIST: gate_platform_syntax_researched - know it",
         component="gate_platform_syntax_researched", reason="operator knows syntax",
-        scope="persist")
+        scope="persist", operator_token=OPERATOR_TOKEN)
     assert res["ok"]
     emit = srv.aurora_emit_execution_pack(pid)
     bypassed = [g["name"] for g in emit["gate_evaluation"]["bypassed_gates"]]

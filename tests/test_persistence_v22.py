@@ -21,6 +21,10 @@ from aurora import bypass_handler, db
 from aurora import server as srv
 from aurora.scoring import prompt_fitness_score
 
+# Operator token used to authorize bypasses in tests (anti-invention). The
+# server_db fixture configures it as AURORA_OPERATOR_TOKEN.
+OPERATOR_TOKEN = "test-operator-token"
+
 
 # --- shared multishot fixtures ---------------------------------------------
 def _operator_prompt_packet() -> dict:
@@ -118,6 +122,7 @@ def server_db(tmp_path, monkeypatch):
     """Isolate the server on a temp DB + session-state file."""
     monkeypatch.setattr(srv, "DB_PATH", tmp_path / "v22.db")
     monkeypatch.setattr(bypass_handler, "SESSION_STATE_PATH", tmp_path / "session.json")
+    monkeypatch.setenv("AURORA_OPERATOR_TOKEN", OPERATOR_TOKEN)
     srv._ensure_db()
     return srv.DB_PATH
 
@@ -252,7 +257,7 @@ def test_bypass_ids_honored_in_emit(server_db):
     log = srv.aurora_log_bypass(
         operator_text="OVERRIDE gate_prompt_fitness - operator accepts",
         component="gate_prompt_fitness", reason="operator accepts", scope="current_turn",
-        project_id=pid)
+        project_id=pid, operator_token=OPERATOR_TOKEN)
     assert log["ok"], log
     # Bypass every OTHER required gate via persist so we isolate prompt_fitness.
     from aurora import gates as gates_pkg
@@ -260,7 +265,8 @@ def test_bypass_ids_honored_in_emit(server_db):
         if gate == "gate_prompt_fitness":
             continue
         srv.aurora_log_bypass(operator_text=f"OVERRIDE {gate}", component=gate,
-                              reason="isolation", scope="persist", project_id=pid)
+                              reason="isolation", scope="persist", project_id=pid,
+                              operator_token=OPERATOR_TOKEN)
     emit = srv.aurora_emit_execution_pack(pid, bypass_ids=[log["bypass_id"]])
     assert emit["ok"], emit.get("reason")
     bypassed = {g["name"] for g in emit["gate_evaluation"]["bypassed_gates"]}

@@ -31,6 +31,12 @@ _MIGRATIONS: dict[str, list[tuple[str, str]]] = {
         ("validated_at", "validated_at TIMESTAMP"),
         ("gate_result_json", "gate_result_json TEXT"),
     ],
+    "bypass_log": [
+        # A pre-existing DB predates authenticated overrides; default 0 means
+        # every legacy bypass is treated as UNauthorized until re-logged with a
+        # valid operator token (fail-closed).
+        ("authorized", "authorized INTEGER NOT NULL DEFAULT 0"),
+    ],
     "elements": [
         ("higgsfield_element_id", "higgsfield_element_id TEXT"),
         ("audit_status", "audit_status TEXT"),
@@ -757,6 +763,7 @@ def insert_bypass_log(
     project_id: Optional[str] = None,
     related_job_id: Optional[str] = None,
     job_outcome: Optional[str] = None,
+    authorized: bool = False,
 ) -> str:
     bypass_id = str(uuid.uuid4())
     conn = get_conn(db_path)
@@ -765,8 +772,8 @@ def insert_bypass_log(
             """
             INSERT INTO bypass_log (
                 bypass_id, project_id, operator_turn_text, component_bypassed,
-                reason, scope, related_job_id, job_outcome
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                reason, scope, related_job_id, job_outcome, authorized
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 bypass_id,
@@ -777,6 +784,7 @@ def insert_bypass_log(
                 scope,
                 related_job_id,
                 job_outcome,
+                1 if authorized else 0,
             ),
         )
         conn.commit()
@@ -839,12 +847,16 @@ def get_logged_bypasses_for_project(
 ) -> dict[str, str]:
     """Return {component: reason} for current_turn bypasses logged against this
     project. current_turn bypasses are not promoted to active_bypasses, so emit
-    reads them here to honor operator sovereignty within the project (bug #9)."""
+    reads them here to honor operator sovereignty within the project (bug #9).
+
+    Only AUTHORIZED bypasses (authorized=1, i.e. accompanied by a valid operator
+    token) are returned. Unauthenticated bypass rows are recorded for audit but
+    are NEVER honored — Claude cannot forge operator consent (anti-invention)."""
     conn = get_conn(db_path)
     try:
         rows = conn.execute(
             "SELECT component_bypassed, reason FROM bypass_log "
-            "WHERE project_id = ? AND scope = 'current_turn' "
+            "WHERE project_id = ? AND scope = 'current_turn' AND authorized = 1 "
             "ORDER BY timestamp ASC, rowid ASC",
             (project_id,),
         ).fetchall()
@@ -861,6 +873,80 @@ def get_active_bypasses(db_path: Optional[str | Path] = None) -> dict[str, str]:
             "SELECT component, reason FROM active_bypasses WHERE revoked_at IS NULL"
         ).fetchall()
         return {r["component"]: r["reason"] for r in rows}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Security events (tamper-evident anti-invention alarm trail)
+# ---------------------------------------------------------------------------
+def insert_security_event(
+    event_type: str,
+    project_id: Optional[str] = None,
+    component: Optional[str] = None,
+    detail: Any = None,
+    severity: str = "halt",
+    db_path: Optional[str | Path] = None,
+) -> str:
+    """Record a security event (e.g. an unauthorized bypass / invention attempt).
+
+    These rows are the persistent alarm trail: while unresolved, emit refuses to
+    produce an Execution Pack and returns a SECURITY_HALT. detail is JSON-encoded.
+    Returns the new event_id."""
+    event_id = str(uuid.uuid4())
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO security_events (event_id, project_id, event_type, "
+            "severity, component, detail_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                project_id,
+                event_type,
+                severity,
+                component,
+                json.dumps(detail) if detail is not None else None,
+            ),
+        )
+        conn.commit()
+        return event_id
+    finally:
+        conn.close()
+
+
+def get_security_events(
+    project_id: Optional[str] = None,
+    unresolved_only: bool = True,
+    db_path: Optional[str | Path] = None,
+) -> list[dict[str, Any]]:
+    """Return security events, newest first. By default only unresolved (active
+    alarm) events. When project_id is given, also includes global events with a
+    NULL project_id so a system-wide halt cannot be sidestepped by a new project."""
+    conn = get_conn(db_path)
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if project_id is not None:
+            clauses.append("(project_id = ? OR project_id IS NULL)")
+            params.append(project_id)
+        if unresolved_only:
+            clauses.append("resolved_at IS NULL")
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = conn.execute(
+            "SELECT * FROM security_events" + where
+            + " ORDER BY created_at DESC, rowid DESC",
+            tuple(params),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            if d.get("detail_json"):
+                try:
+                    d["detail"] = json.loads(d["detail_json"])
+                except (ValueError, TypeError):
+                    d["detail"] = None
+            out.append(d)
+        return out
     finally:
         conn.close()
 
