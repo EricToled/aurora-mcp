@@ -175,6 +175,41 @@ def test_validate_falls_back_to_project_id_in_packet(server_db):
     assert recorded["gate_preproduction_packet"]["status"] == "pass"
 
 
+def test_validate_preproduction_packet_persists_and_emit_reads(server_db):
+    """The explicit round-trip: data authored ONLY in the validated packet must
+    reach the emitted pack. This is the core of bug #8 — validate used to score
+    in memory and discard the packet, so emit rendered ceremonial-green-but-empty
+    sections. Here we prove the seam: persist -> read -> render the same data.
+    """
+    pid = srv.aurora_create_project(
+        "Vivaldi Four Seasons quartet, 3 shots", "video_multishot", "performance",
+    )["project_id"]
+
+    # 1) validate persists the packet, its embedded shot_list, and the verdict.
+    out = srv.aurora_validate_preproduction_packet(packet=_multishot_packet(), project_id=pid)
+    assert out["passed"] is True
+    assert db.get_artifact(pid, "preproduction_packet", db_path=str(server_db))
+    assert db.get_artifact(pid, "shot_list", db_path=str(server_db))
+    recorded = db.get_latest_gate_evaluations(pid, db_path=str(server_db))
+    assert recorded["gate_preproduction_packet"]["status"] == "pass"
+
+    # 2) drive the remaining gates green and emit.
+    _drive_multishot_to_psp(pid)
+    emit = srv.aurora_emit_execution_pack(pid)
+    assert emit["ok"], emit.get("reason")
+    md = emit["markdown"]
+
+    # 3) every assertion below targets a value that exists NOWHERE but the packet,
+    #    so its presence proves emit read what validate persisted (not defaults).
+    assert "violinist" in md and "elem-violinist" in md  # packet.characters -> §5
+    assert "candlelit baroque concert hall" in md         # packet.location  -> §5
+    assert "warm baroque chiaroscuro" in md               # packet.visual_style -> §7
+    for n in (1, 2, 3):                                    # packet.shot_list -> §8
+        assert f"### Shot {n}" in md
+    assert "elem-quartet-ff" in md                         # shot-1 FF anchor -> §8
+    assert "identity stable across shots" in md           # packet.success_criteria -> §11
+
+
 # --- Bug #9: a logged bypass is honored at emit -----------------------------
 def test_bypass_ids_honored_in_emit(server_db):
     pid = srv.aurora_create_project("vivaldi", "video_multishot", "performance")["project_id"]
