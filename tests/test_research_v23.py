@@ -155,6 +155,34 @@ def test_build_prompt_handles_mapping_params_schema(server_db):
     assert out["mcp_payload"]["model_id"] == "veo"
 
 
+def test_build_prompt_fills_granular_camera_and_quality_slots(server_db):
+    # Regression: a template with granular slots ({camera_body}, {focal_mm},
+    # {movement}, {quality}) plus a plural {negatives} must be fully resolved —
+    # no literal "{placeholder}" may survive into prompt_final.
+    pid = srv.aurora_create_project("x", "video_simple", "perf")["project_id"]
+    dossier = _dossier("veo", "video_simple")
+    dossier["prompt_template"] = (
+        "{subject}, {action}, {look}, shot on {camera_body} {focal_mm}, "
+        "{movement}, {quality}, {aspect_ratio}, {negatives}, {unknown_slot}"
+    )
+    srv.aurora_record_platform_research(
+        project_id=pid, model_id="veo", output_type="video_simple",
+        syntax_dossier=dossier, sources=_sources(3), ttl_days=30)
+    out = srv.aurora_build_prompt(
+        project_id=pid, model_id="veo", output_type="video_simple",
+        shot_or_element_data={
+            "subject": "@hero", "action": "sprint", "look": "noir",
+            "camera": {"body": "ARRI Alexa", "focal_mm": 50, "movement": "slow dolly"},
+            "quality": "8k cinematic", "format": {"aspect_ratio": "16:9"},
+            "negative_constraints": ["no text", "no logos"]})
+    assert out["ok"]
+    p = out["prompt_final"]
+    assert "{" not in p and "}" not in p  # nothing left unresolved
+    for token in ("ARRI Alexa", "50mm", "slow dolly", "8k cinematic", "16:9",
+                  "no text", "@hero"):
+        assert token in p, f"missing {token!r} in {p!r}"
+
+
 def test_build_prompt_requires_valid_output_type(server_db):
     pid = srv.aurora_create_project("x", "video_simple", "perf")["project_id"]
     out = srv.aurora_build_prompt(

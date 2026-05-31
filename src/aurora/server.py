@@ -15,6 +15,7 @@ Two transports — same deterministic behavior:
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -767,24 +768,50 @@ def _camera_text(camera: Any) -> str:
 
 
 def _render_prompt_with_dossier(dossier: dict[str, Any], data: dict[str, Any]) -> str:
-    """Fill the dossier's prompt_template with MCSLA slots. Uses str.replace so
-    an unknown placeholder is left intact rather than raising (truth > crash)."""
+    """Fill the dossier's prompt_template with MCSLA slots. Resolves both the
+    composite {camera} slot and the GRANULAR camera/quality slots a platform
+    template may declare ({camera_body}, {focal_mm}, {movement}, {quality}, …);
+    any slot the data can't fill is stripped rather than shipped as a literal
+    "{placeholder}" to the operator."""
     template = dossier.get("prompt_template") or "{subject}, {action}, {look}, {camera}"
     fmt = data.get("format") or {}
+    camera = data.get("camera") if isinstance(data.get("camera"), dict) else {}
+    focal = camera.get("focal_mm") or data.get("focal_mm")
     slots = {
         "subject": _as_text(data.get("subject") or data.get("name")),
         "action": _as_text(data.get("action")),
         "look": _as_text(data.get("look") or data.get("visual_style")),
+        # Composite camera phrase (body + focal + movement).
         "camera": _camera_text(data.get("camera")),
+        # Granular camera slots so platform templates can place each part.
+        "camera_body": _as_text(camera.get("body") or data.get("camera_body")),
+        "focal_mm": (f"{focal}mm" if focal else ""),
+        "movement": _as_text(camera.get("movement") or data.get("movement")),
+        "lens": _as_text(camera.get("lens") or data.get("lens")),
+        "quality": _as_text(data.get("quality") or dossier.get("default_quality")),
+        # Accept both singular and plural negative slots.
         "negative": _as_text(data.get("negative_constraints")),
-        "aspect_ratio": str(fmt.get("aspect_ratio") or data.get("aspect_ratio") or ""),
+        "negatives": _as_text(data.get("negative_constraints")),
+        "aspect_ratio": str(
+            fmt.get("aspect_ratio")
+            or data.get("aspect_ratio")
+            or camera.get("aspect_ratio")
+            or ""
+        ),
         "duration": str(data.get("duration_seconds") or ""),
         "brand_or_product": _as_text(data.get("brand_or_product")),
     }
     out = template
     for key, value in slots.items():
         out = out.replace("{" + key + "}", value)
-    return out.strip().strip(",").strip()
+    # Drop any remaining unfilled slots (e.g. a platform-specific placeholder we
+    # don't model) so the final prompt never contains literal braces.
+    out = re.sub(r"\{[a-zA-Z0-9_]+\}", "", out)
+    # Tidy the punctuation/whitespace debris left by emptied slots.
+    out = re.sub(r"\s+([,.;:])", r"\1", out)        # " ," -> ","
+    out = re.sub(r"([,.;:])(?:\s*[,.;:])+", r"\1", out)  # ", ." -> ","
+    out = re.sub(r"\s{2,}", " ", out)               # collapse runs of spaces
+    return out.strip().strip(",.;: ").strip()
 
 
 def _validate_prompt_against_dossier(

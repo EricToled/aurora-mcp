@@ -245,8 +245,9 @@ async def main() -> int:
                                    shot_or_element_data={"action": "sprint start",
                                                          "subject": ["@sprinter_soul"],
                                                          "look": "editorial sports cinema"})
-            record("S8b build_prompt", not err and bool(bpmt.get("prompt_final")),
-                   f"prompt={(bpmt.get('prompt_final') or '')[:48]!r}")
+            _pf = bpmt.get("prompt_final") or ""
+            record("S8b build_prompt", not err and bool(_pf) and "{" not in _pf,
+                   f"prompt={_pf[:48]!r}")
 
             # --- Step 9: proposals (image + video w/ finishing) -------------
             pi, err = await call("aurora_propose_image_generation", project_id=pid,
