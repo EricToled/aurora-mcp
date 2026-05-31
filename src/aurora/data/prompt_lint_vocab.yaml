@@ -1,0 +1,300 @@
+# Aurora Prompt Linter — Vocabulary Lists v1.0
+# Fecha: 2026-05-27
+# Cada lista corresponde a una categoría de la IDs system v6.0 §7.
+# Cuando un ref carga esa categoría, los términos listados quedan BANNED
+# en el prompt MAIN (no en el negative prompt).
+# Sub-tags (P.body, O.upper, etc.) reservados para v1.1.
+
+# ---------- P: Personaje / Sujeto ----------
+P:
+  - athletic woman
+  - athletic man
+  - lean build
+  - muscular build
+  - toned build
+  - athletic build
+  - lean toned build
+  - mid-20s
+  - mid-30s
+  - mid-40s
+  - mid-50s
+  - young woman
+  - young man
+  - dark hair
+  - brown hair
+  - dark brown hair
+  - blonde hair
+  - black hair
+  - red hair
+  - ponytail
+  - high ponytail
+  - low ponytail
+  - loose hair
+  - curly hair
+  - hair tied
+  - female cyclist
+  - male cyclist
+  - female athlete
+  - male athlete
+  - athletic
+  - lean
+  - muscular
+  - toned
+  - tanned skin
+  - face
+  - jawline
+  - sweat
+  - sweaty
+  - female
+  - male
+
+# ---------- O: Outfit ----------
+O:
+  - red sports bra
+  - red shorts
+  - red tank top
+  - red top
+  - red high-waist
+  - red performance tank
+  - red high-waist shorts
+  - black t-shirt
+  - black shorts
+  - black tank top
+  - black tights
+  - black sneakers
+  - white sneakers
+  - performance tank top
+  - athletic wear
+  - workout clothes
+  - sports bra
+  - tank top
+  - t-shirt
+  - shorts
+  - sneakers
+  - shoes
+  - leggings
+
+# ---------- L: Locación ----------
+L:
+  - studio
+  - gym
+  - indoor cycling studio
+  - modern studio
+  - sunlit studio
+  - climbing wall
+  - bouldering wall
+  - bouldering grips
+  - black triangular volume
+  - black triangular prism
+  - wood floor
+  - wooden floor
+  - polished wood floor
+  - polished light wood floor
+  - concrete walls
+  - concrete floor
+  - cool gray walls
+  - cool gray concrete
+  - glass walls
+  - floor-to-ceiling windows
+  - floor-to-ceiling glass walls
+  - city skyline
+  - skyline
+  - trees beyond
+  - city beyond
+  - out-of-focus city
+  - windows
+  - tungsten spots
+  - warm tungsten
+  - warm lighting
+  - industrial lighting
+  - natural daylight
+  - soft shadows
+  - soft directional shadows
+  - night
+  - at night
+  - daylight
+  - cycling studio
+  - spin studio
+
+# ---------- PR: Prop ----------
+PR:
+  - soccer ball
+  - football
+  - black and white ball
+  - red and white ball
+  - black panel
+  - red panel
+  - sports ball
+  - the ball changes color
+  - traditional ball
+
+# ---------- S: Estilo ----------
+S:
+  - photorealistic
+  - cinematic
+  - editorial
+  - documentary
+  - studio lighting
+
+# ---------- BANNED: Cross-platform always-banned in MAIN prompt ----------
+# Estos NO se permiten nunca en el MAIN prompt (sí pueden ir en negative).
+BANNED:
+  - slow motion
+  - dreamy slowmo
+  - dreamy
+  - cartoon
+  - anime
+  - 3D render
+  - perfume ad
+  - perfume ad aesthetic
+  - plastic skin
+  - smooth plastic
+  - dreamlike
+  - soft glow
+
+# ---------- REQUIRED por caso ----------
+# Keywords obligatorios cuando el caso aplica.
+# Case 3a/3b/3c con sports broadcast (Regla 26 v6.0):
+REQUIRED_SPORTS_BROADCAST:
+  - 60fps
+  - broadcast realism
+
+# Negative prompt obligatorio en todos los casos:
+NEGATIVE_PROMPT_REQUIRED:
+  - negative
+
+# ---------- ALLOWED motion/camera vocabulary (exento de baneo) ----------
+# Si un término baneado aparece en proximidad (<50 chars) de uno de estos
+# prefixes, se considera contexto de motion/cámara y NO se flaggea.
+ALLOWED_MOTION_PREFIXES:
+  - camera
+  - shot
+  - lens
+  - framing
+  - angle
+  - view
+  - perspective
+  - pans
+  - tilts
+  - arcs
+  - pulls
+  - dollies
+  - pushes
+  - tracks
+  - follows
+  - swings
+  - orbits
+  - descends
+  - rises
+
+# ---------- REQUIRED_SECTIONS_BY_PLATFORM_CASE (NUEVO v1.1 2026-05-27) ----------
+# Secciones obligatorias que debe contener el MAIN prompt para cada combinación
+# de plataforma + caso. Cada sección tiene una lista de keyword patterns (case-insensitive,
+# substring match). El linter considera la sección PRESENTE si AL MENOS UNO de los patterns
+# matchea en el MAIN. Si una sección requerida no se detecta, es FAIL.
+#
+# Convención de keys: <platform>__<case>
+# Si una combinación no está listada, el linter omite la validación de secciones
+# y reporta WARN ("no required-sections snapshot for this platform+case — operate honor system").
+
+REQUIRED_SECTIONS_BY_PLATFORM_CASE:
+
+  # ====== Caso 1 — Génesis text-to-image ======
+  gpt_image_2__1:
+    subject:        [woman, man, person, subject, character, animal, dog, cat, building, object, group]
+    action_or_pose: [standing, sitting, holding, walking, looking, running, leaning, resting, posing]
+    environment:   [studio, gym, room, street, outdoor, indoor, landscape, forest, urban, beach, field]
+    style:         [photorealistic, documentary, editorial, cinematic, candid, journalistic, naturalistic]
+    camera_or_lens: [lens, mm, telephoto, wide angle, close-up, medium shot, full body, framing, shot]
+    lighting:      [light, lighting, sunlight, daylight, tungsten, golden hour, soft light, backlit, rim light]
+    anti_style:    [not illustration, not render, no stylization, no cartoon, no anime, photoreal]
+
+  midjourney__1:
+    subject:        [woman, man, person, subject, character, animal, object]
+    style:          [photorealistic, cinematic, editorial, candid, documentary, --style]
+    composition:    [composition, framing, rule of thirds, centered, off-center, shot]
+    lighting:       [lighting, sunlight, daylight, tungsten, golden hour, soft light]
+    aspect_ratio:   ["--ar", aspect ratio, 16:9, 9:16, 3:2, 2:3, 1:1]
+    quality:        ["--v", "--style", "--q", "--stylize"]
+
+  nano_banana_pro__1:
+    subject:        [woman, man, person, subject, character, animal]
+    action_or_pose: [standing, sitting, holding, walking, leaning, posing]
+    environment:    [studio, gym, room, outdoor, indoor]
+    style:          [photorealistic, documentary, editorial, candid]
+    lighting:       [light, lighting, sunlight, tungsten, soft, golden hour]
+    details:        [skin texture, fabric, fine detail, asymmetry, natural flaws, pores]
+
+  # ====== Caso 2 — Imagen Ancla ======
+  gpt_image_2__2:
+    ref_roles:      [image 1, image 2, image 3, "ref:", reference image, ref 1, ref 2]
+    subject_action: [holding, standing, sitting, walking, looking, posing, holding, performing]
+    camera_or_lens: [lens, mm, telephoto, close-up, medium shot, framing]
+    lighting:       [light, lighting, sunlight, tungsten, soft, daylight]
+    style_consistency: [preserve, maintain, same style, consistent, exact]
+
+  gpt_image_1_5__2:
+    ref_roles:      [image 1, image 2, image 3, "ref:", reference image, face strip, ref 1]
+    face_preservation: [preserve exact facial, preserve face, preserve identity, exact facial structure, eye shape, jawline, skin texture]
+    subject_action: [holding, standing, sitting, performing, posing, walking]
+    camera_or_lens: [lens, mm, telephoto, framing, medium shot, close-up]
+    lighting:       [light, lighting, sunlight, soft, tungsten]
+
+  nano_banana_pro__2:
+    ref_roles:      [image 1, image 2, image 3, "ref:", reference]
+    subject_action: [holding, standing, sitting, walking, posing]
+    camera_or_lens: [lens, mm, framing, shot]
+    lighting:       [light, lighting, sunlight, soft, tungsten]
+    placement_anchor: [on the, at the, in the, beside, next to, between, in front of]
+
+  # ====== Caso 3a — I2V FF only ======
+  kling_3.0__3a:
+    scene_or_motion: [scene, motion, movement, action, evolution, transition, glides, follows, arcs, travels, drifts]
+    subject_action:  [she, he, the subject, the ball, the camera, the figure, lifts, turns, extends, rotates]
+    camera:          [camera, shot, lens, angle, view, dollies, pans, tilts, arcs, pushes, holds]
+    style:           [realism, cinematic, broadcast, documentary, photorealistic, naturalistic]
+    anti_morphing:   [no morphing, anti-morph, smooth, stable, consistent, no warping]
+
+  veo_3.1__3a:
+    subject_action: [she, he, the subject, lifts, turns, extends, walks, runs, glides]
+    timing_or_beat: [seconds, second, beat, gradually, slowly, quickly, over, during, then]
+    camera:         [camera, shot, lens, angle, dollies, pans, tilts, tracks]
+    style:          [realism, cinematic, photorealistic, 24fps, cinema, broadcast]
+    physics_cue:    [gravity, momentum, weight, mass, falls, bounces, drops, follows, arc, trajectory]
+
+  # ====== Caso 3b — I2V FF + LF ======
+  kling_3.0__3b:
+    scene_or_motion:  [scene, motion, transition, evolves, glides, travels, follows, transforms]
+    transition_FF_LF: [from, into, to, through, evolves, transitions, becomes, settles, ends, arrives]
+    camera:           [camera, shot, dollies, pans, tilts, arcs, holds, tracks]
+    style:            [realism, broadcast, cinematic, photorealistic, documentary]
+    anti_morphing:    [no morphing, smooth transition, stable, consistent, organic transition]
+
+  veo_3.1__3b:
+    transition_FF_LF: [from, into, to, through, evolves, transitions, becomes, then, settles]
+    timing_or_beat:   [seconds, beat, gradually, then, over, during]
+    camera:           [camera, shot, dollies, pans, tilts]
+    physics_cue:      [gravity, momentum, weight, falls, arc, trajectory, lands]
+    anti_morphing:    [no morphing, smooth, stable, consistent]
+
+  # ====== Caso 3c — Motion control ======
+  kling_3.0__3c:
+    scene:                [scene, environment, setting, location, backdrop]
+    motion_reference:     [motion reference, "@video", reference video, skeletal, pose ref, mocap]
+    character_orientation: [orientation, facing, front-facing, character orientation, 人物朝向]
+    camera:               [camera, shot, framing, angle, lens]
+
+  # ====== Caso 4 — Video con diálogo ======
+  veo_3.1__4:
+    subject_action: [she, he, the subject, the speaker, says, speaks, talks]
+    dialogue:       ['"', '"', "'", "'", says, speaking, dialogue]
+    tone_or_accent: [tone, accent, voice, whispers, shouts, calmly, excitedly, authoritative, soft, deep]
+    timing:         [seconds, beat, pauses, then, during, over]
+    audio_specs:    [audio, ambient, music, sound, room tone, breath, footsteps, native audio]
+
+  sora_2__4:
+    subject_action: [she, he, the subject, says, speaks, performs]
+    dialogue:       ['"', '"', says, speaking]
+    tone_or_accent: [tone, accent, voice, whispers, shouts, calmly]
+    timing:         [seconds, beat, then, over]
+    audio_specs:    [audio, ambient, sound, native audio]

@@ -37,6 +37,7 @@ from .gates import (
     gate_multishot_anchor_strategy,
     gate_preproduction_packet,
     gate_prompt_fitness,
+    gate_prompt_lint,
     gate_route_verification,
     gate_step_0_quality_ceiling,
     gate_upscale_finishing_route,
@@ -55,6 +56,7 @@ from .scoring import (
     multishot_continuity_score,
     production_success_probability,
     prompt_fitness_score,
+    prompt_lint,
     video_quality_score,
 )
 
@@ -1253,6 +1255,55 @@ def aurora_check_prompt_fitness(
 
 
 @mcp.tool()
+def aurora_lint_prompt(
+    project_id: str,
+    prompt: str,
+    case: str,
+    platform: str = "",
+    refs: Optional[list[dict[str, Any]]] = None,
+    overrides_text: str = "",
+    sports_broadcast: bool = False,
+) -> dict[str, Any]:
+    """Deterministic prompt linter (gate_prompt_lint) — el linter que antes vivía
+    en la skill aurora-prompt-linter, ahora dentro de AURORA.
+
+    Valida en 3 capas el texto del prompt visual ANTES de entregarlo:
+      1. Redundancia con refs por categoría P/O/L/PR/S — no re-describas lo que la
+         referencia ya muestra (solo describe motion/cámara/evolución/atributos no
+         visibles).
+      2. Secciones requeridas por plataforma+caso (Kling 3.0/Veo 3.1/Sora 2/GPT
+         Image 2/Nano Banana Pro/Midjourney según el caso 1/2/3a/3b/3c/4).
+      3. Estructura: word-count cap por caso, negative prompt obligatorio, vocab
+         baneado, keywords de sports broadcast cuando aplica.
+
+    ``case`` ∈ {1, 2, 3a, 3b, 3c, 4}. ``refs`` es una lista de dicts con
+    {file, role, tags:[P1,O1,...]}. Un FAIL queda registrado y BLOQUEA emit hasta
+    que se corrija o se autorice con ``OVERRIDE: <término|categoría> - <razón>`` en
+    overrides_text. Devuelve el reporte determinista completo."""
+    _ensure_db()
+    if case not in prompt_lint.VALID_CASES:
+        return {
+            "ok": False,
+            "reason": f"unknown case '{case}'",
+            "valid_cases": list(prompt_lint.VALID_CASES),
+        }
+    lint_result = prompt_lint.lint(
+        prompt=prompt or "", case=case, platform=platform or "",
+        refs=refs or [], overrides_text=overrides_text or "",
+        sports_broadcast=bool(sports_broadcast),
+    )
+    db.put_artifact(project_id, "prompt_lint", lint_result, db_path=_db())
+    gate_result = gate_prompt_lint.check(lint_result)
+    _record_gate_eval(
+        project_id, "gate_prompt_lint", gate_result, packet=lint_result,
+        evaluator_version=prompt_lint.EVALUATOR_VERSION,
+    )
+    out = {"ok": True, "passed": gate_result.passed, **lint_result}
+    out["attestation_required"] = _attestation_directive(project_id, "prompt_fitness")
+    return out
+
+
+@mcp.tool()
 def aurora_check_multishot_strategy(
     project_id: str,
     shot_list: list[dict[str, Any]],
@@ -1491,6 +1542,30 @@ def aurora_emit_execution_pack(
         if row and row.get("component_bypassed") and row.get("authorized"):
             comp = bypass_handler.canonical_component(row["component_bypassed"])
             active[comp] = row.get("reason") or "operator bypass"
+
+    # PROMPT LINT (conditional gate): if a deterministic lint was run for this
+    # project and FAILED, the prompt re-describes its refs / misses a required
+    # section / breaks structure — delivery is blocked until it is fixed or an
+    # AUTHORIZED bypass of gate_prompt_lint is in effect. Backward compatible:
+    # projects that never linted carry no gate_prompt_lint verdict, so this is a
+    # no-op for them.
+    lint_eval = recorded.get("gate_prompt_lint")
+    if (lint_eval and lint_eval.get("status") == "fail"
+            and "all" not in active and "gate_prompt_lint" not in active):
+        lint_art = db.get_artifact(project_id, "prompt_lint", db_path=_db()) or {}
+        return {
+            "ok": False,
+            "status": "PROMPT_LINT_FAILED",
+            "reason": (
+                "El linter determinista marcó FAIL: el prompt re-describe refs, "
+                "omite una sección requerida, o rompe la estructura. No se entrega "
+                "hasta corregir o autorizar OVERRIDE: gate_prompt_lint."
+            ),
+            "project_id": project_id,
+            "violations": lint_art.get("violations", []),
+            "suggestions": lint_art.get("suggestions", []),
+            "report": lint_art.get("report", ""),
+        }
 
     project_view = {
         "project_id": project_id,
@@ -2013,6 +2088,7 @@ _REQUIRED_TOOLS = {
     "aurora_check_quality_ceiling",
     "aurora_validate_biomechanics",
     "aurora_check_prompt_fitness",
+    "aurora_lint_prompt",
     "aurora_check_multishot_strategy",
     "aurora_check_anchors_ready",
     "aurora_compute_production_success_probability",

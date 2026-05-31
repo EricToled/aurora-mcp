@@ -41,6 +41,11 @@ GATE_COMPONENTS = frozenset({
     "gate_upscale_finishing_route",
     "gate_production_success_probability",
     "gate_platform_syntax_researched",
+    # Conditional gate: not in the mode's always-required set and not in
+    # gates.GATE_MODULES, but emit blocks on a recorded FAIL — so it MUST be
+    # bypassable by an authorized operator. (The coherence meta-test only
+    # requires GATE_MODULES be a subset of this set, so the extra is safe.)
+    "gate_prompt_lint",
 })
 
 # Pipeline steps that are bypassable but are not Execution-Pack gates.

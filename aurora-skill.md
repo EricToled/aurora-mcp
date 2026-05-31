@@ -68,6 +68,36 @@ El gate `gate_platform_syntax_researched` **bloquea el Execution Pack** si algú
 modelo declarado no tiene dossier fresco. Es bypasseable con sintaxis explícita
 del operador como cualquier otro gate.
 
+## Prompt-lint determinista (anti-redundancia / estructura)
+
+Antes de entregar cualquier prompt visual, **pásalo por el linter determinista**
+(migrado del skill `aurora-prompt-linter`). Es un escáner de 3 capas:
+
+1. **Redundancia de refs (P/O/L/PR/S)** — si una referencia ya carga una
+   categoría (Pose, Outfit, Location, Prop, Style) vía tags, NO la vuelvas a
+   describir en el MAIN. Re-describir es FAIL. El contexto de movimiento
+   (p. ej. "explodes off the blocks") NO cuenta como descriptor estático.
+2. **Secciones requeridas por plataforma+case** — p. ej. `kling_3.0` case `3a`
+   exige una sección de cámara.
+3. **Estructura** — tope de palabras por case, bloque `Negative:` obligatorio,
+   vocabulario prohibido (BANNED), y keywords de broadcast deportivo si aplica.
+
+Tool: `aurora_lint_prompt(project_id, prompt, case, platform="", refs=None,
+overrides_text="", sports_broadcast=False)`.
+
+- `case` ∈ {`1`, `2`, `3a`, `3b`, `3c`, `4`} (T2I / anchor / dialogue / I2V…).
+- Devuelve `passed`, `violations`, `suggestions`, `report` y registra el verdict
+  como `gate_prompt_lint`.
+- Para limpiar una redundancia legítima usa `overrides_text` con la sintaxis
+  `OVERRIDE: <categoría> - <razón>` (p. ej. `OVERRIDE: O - the outfit visibly
+  changes color mid-shot`).
+
+El gate `gate_prompt_lint` **no** está en el set siempre-requerido del modo: solo
+aplica cuando efectivamente corres un lint. Pero una vez registrado un FAIL, el
+emit **bloquea la entrega** con `status="PROMPT_LINT_FAILED"` hasta corregir el
+prompt o bypassear con `OVERRIDE PERSIST: gate_prompt_lint - <razón>` (operador
+autorizado con token).
+
 ## Reglas
 
 - No inventar capabilities.
