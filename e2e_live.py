@@ -103,6 +103,33 @@ MULTISHOT_PACKET = {
 }
 
 
+def _sources() -> list[dict]:
+    """3 fully-covered research sources (official_docs + mcp_introspection +
+    community_forums) so aurora_record_platform_research accepts the dossier."""
+    return [
+        {"source_type": "official_docs", "url": "https://docs.higgsfield.ai/video",
+         "verbatim_quote": "Use medias[].roles to inject start_image and video continuity."},
+        {"source_type": "mcp_introspection", "url": "models_explore action=get",
+         "verbatim_quote": "model accepts prompt, medias[], duration, aspect_ratio."},
+        {"source_type": "community_forums", "url": "https://forum.example/threads/1",
+         "verbatim_quote": "Tail-extract the last frame for seamless multishot continuity."},
+    ]
+
+
+def _dossier(model_id: str, output_type: str) -> dict:
+    """A complete syntax_dossier (all 5 required fields)."""
+    return {
+        "model_id": model_id,
+        "output_type": output_type,
+        "prompt_template": "{action}. {subject}. {camera}. {look}. {negatives}",
+        "continuity_injection": {
+            "strategy": "medias[].roles=video", "field": "medias",
+            "instructions": "Append previous clip as medias entry with roles=['video']."},
+        "params_schema": {"prompt": "str", "medias": "list", "duration": "int",
+                          "aspect_ratio": "str"},
+    }
+
+
 def _payload(res) -> dict:
     if getattr(res, "structuredContent", None):
         sc = res.structuredContent
@@ -196,6 +223,30 @@ async def main() -> int:
                                              "confidence": 0.95})
             record("S8 verify_route", not err and vr.get("ok"),
                    f"type={vr.get('decision', {}).get('route_type')}")
+
+            # --- Step 8b: research-driven prompt construction (v2.3) --------
+            # The brief must offer the 3 mandatory source queries.
+            rq, err = await call("aurora_request_platform_research", project_id=pid,
+                                 model_id="higgsfield_video_v1", output_type="video_simple")
+            brief_obj = rq.get("research_brief") or {}
+            src_types = set((brief_obj.get("queries_per_source") or {}).keys())
+            three = {"official_docs", "mcp_introspection", "community_forums"}
+            record("S8b request_research(3 sources)",
+                   not err and (rq.get("cached") or three.issubset(src_types)),
+                   f"cached={rq.get('cached')} sources={sorted(src_types)}")
+            rr, err = await call("aurora_record_platform_research", project_id=pid,
+                                 model_id="higgsfield_video_v1", output_type="video_simple",
+                                 syntax_dossier=_dossier("higgsfield_video_v1", "video_simple"),
+                                 sources=_sources())
+            record("S8b record_research", not err and rr.get("ok"),
+                   f"confidence={rr.get('confidence')}")
+            bpmt, err = await call("aurora_build_prompt", project_id=pid,
+                                   model_id="higgsfield_video_v1", output_type="video_simple",
+                                   shot_or_element_data={"action": "sprint start",
+                                                         "subject": ["@sprinter_soul"],
+                                                         "look": "editorial sports cinema"})
+            record("S8b build_prompt", not err and bool(bpmt.get("prompt_final")),
+                   f"prompt={(bpmt.get('prompt_final') or '')[:48]!r}")
 
             # --- Step 9: proposals (image + video w/ finishing) -------------
             pi, err = await call("aurora_propose_image_generation", project_id=pid,
@@ -303,6 +354,24 @@ async def main() -> int:
                 msf, e5 = await call("aurora_skip_finishing", project_id=mpid,
                                      reason="raw higgsfield output is final")
                 record("M11 skip_finishing", not e5 and msf.get("ok"), "")
+                # v2.3: research the multishot model so gate_platform_syntax passes.
+                mrr, e5b = await call(
+                    "aurora_record_platform_research", project_id=mpid,
+                    model_id="higgsfield_video_v1", output_type="video_multishot",
+                    syntax_dossier=_dossier("higgsfield_video_v1", "video_multishot"),
+                    sources=_sources())
+                record("M11b record_research(multishot)", not e5b and mrr.get("ok"),
+                       f"confidence={mrr.get('confidence')}")
+                mbp, e5c = await call(
+                    "aurora_build_prompt", project_id=mpid,
+                    model_id="higgsfield_video_v1", output_type="video_multishot",
+                    shot_or_element_data=MULTISHOT_SHOTS[1],
+                    continuity_strategy={"case_type": "continuity_from_previous",
+                                         "continuity_ref_type": "last_frame",
+                                         "previous_clip_ref": "shot-1-clip"})
+                record("M11b build_prompt(+continuity injection)",
+                       not e5c and bool(mbp.get("injection_instructions")),
+                       f"injection={bool(mbp.get('injection_instructions'))}")
                 await call("aurora_record_psp_components", project_id=mpid,
                            components=PSP_COMPONENTS)
                 await call("aurora_compute_production_success_probability",
@@ -310,7 +379,8 @@ async def main() -> int:
                 mep, e6 = await call("aurora_emit_execution_pack", project_id=mpid)
                 mev = mep.get("gate_evaluation", {})
                 all_clear = bool(mev.get("all_clear"))
-                has_md = mep.get("markdown") is not None
+                mmd = mep.get("markdown") or ""
+                has_md = bool(mmd)
                 record("M13 emit_execution_pack(multishot)",
                        not e6 and mep.get("ok") and all_clear and has_md,
                        f"all_clear={all_clear} md={has_md}")
@@ -319,6 +389,14 @@ async def main() -> int:
                     print(f"   {g['status']:9} {g['name']}")
                 if mep.get("reason"):
                     print("   reason:", mep["reason"])
+                # The pack must be OPERATIVELY populated, not ceremonially green:
+                # the validated packet's elements + per-shot instructions must be
+                # in the rendered document.
+                content_ok = ("violinist" in mmd and "### Shot 2" in mmd
+                              and "### Shot 3" in mmd and "MCSLA breakdown" in mmd
+                              and "elem-quartet-ff" in mmd)
+                record("M13b pack content populated", content_ok,
+                       f"elements+shots+MCSLA in markdown={content_ok}")
 
                 # === BYPASS honored at emit (bug #9) — separate project ======
                 bproj, _ = await call("aurora_create_project",
@@ -338,6 +416,42 @@ async def main() -> int:
                 record("M14 bypass_ids honored",
                        not eb and "gate_prompt_fitness" in bbypassed,
                        f"bypassed={sorted(bbypassed)}")
+
+            # === PIPELINE A (Image Director) research flow ==================
+            print("\n========== PIPELINE A CASE (image research) ==========")
+            iproj, _ = await call("aurora_create_project",
+                                  operator_intent="genesis hero still of a sprinter",
+                                  mode="image_simple", output_type="hero_image")
+            ipid = iproj.get("project_id")
+            record("A2 create_project(image)", bool(ipid), f"pid={ipid}")
+            if ipid:
+                irq, ea = await call("aurora_request_platform_research", project_id=ipid,
+                                     model_id="nano_banana_pro", output_type="image_genesis")
+                ibrief = irq.get("research_brief") or {}
+                # official_docs queries must be image-scoped (contain "genesis").
+                odq = " ".join(
+                    (ibrief.get("queries_per_source") or {}).get("official_docs", [])
+                ).lower()
+                record("A8b request_research(image_genesis)",
+                       not ea and (irq.get("cached") or "genesis" in odq),
+                       f"cached={irq.get('cached')}")
+                irr, eb2 = await call(
+                    "aurora_record_platform_research", project_id=ipid,
+                    model_id="nano_banana_pro", output_type="image_genesis",
+                    syntax_dossier=_dossier("nano_banana_pro", "image_genesis"),
+                    sources=_sources())
+                record("A8b record_research(image)", not eb2 and irr.get("ok"),
+                       f"confidence={irr.get('confidence')}")
+                ibp, ec = await call(
+                    "aurora_build_prompt", project_id=ipid, model_id="nano_banana_pro",
+                    output_type="image_genesis",
+                    shot_or_element_data={"action": "sprinter mid-stride",
+                                          "look": "editorial sports cinema"})
+                # Image build has NO continuity injection.
+                no_cont = not ibp.get("injection_instructions")
+                record("A8b build_prompt(image, no continuity)",
+                       not ec and bool(ibp.get("prompt_final")) and no_cont,
+                       f"no_continuity={no_cont}")
 
     print("\n================ E2E SUMMARY ================")
     passed = sum(1 for _, ok, _ in results if ok)

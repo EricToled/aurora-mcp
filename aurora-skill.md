@@ -21,11 +21,52 @@ AI con Higgsfield.
 6. Crear brief.
 7. Validar preproduction packet si es video.
 8. Verificar rutas UI/MCP.
+8b. **Investigar la sintaxis de cada modelo declarado ANTES de construir prompts (OBLIGATORIO, ambos pipelines).**
 9. Generar o identificar Elements en Higgsfield mediante el conector Higgsfield MCP.
 10. Auditar outputs.
 11. Registrar scores.
 12. Bloquear si Production Success Probability < 85.
 13. Emitir Execution Pack solo si todos los gates pasan.
+
+## Paso 8b — Research-Driven Prompt Construction (OBLIGATORIO)
+
+AURORA **construye** el prompt MCSLA específico de cada plataforma; no deja la
+sintaxis al operador. Para hacerlo necesita un `syntax_dossier` fresco por modelo.
+Esto aplica a **AMBOS** pipelines, sin excepción:
+
+- **Pipeline A (Image Director):** cada Element/anchor declara su `model_id`
+  (Soul, FLUX, Nano Banana Pro, GPT Image, …). `output_type` = `image_genesis`
+  o `image_anchor`.
+- **Pipeline B/C (Video Production Director):** cada shot declara su modelo MCSLA
+  (Cinema Studio Video 3.0, Kling 3.0, Veo 3.1, Seedance 2.0, …). `output_type` =
+  `video_simple` / `video_multishot`.
+
+Flujo por cada modelo declarado:
+
+1. `aurora_request_platform_research(project_id, model_id, output_type, shot_context?)`
+   → si hay dossier fresco lo devuelve; si no, devuelve un **research_brief** con
+   3 queries obligatorias de fuentes:
+   `official_docs`, `mcp_introspection`, `community_forums`.
+2. Ejecuta el skill `research` sobre las 3 fuentes:
+   - **official_docs** — documentación oficial de la plataforma/modelo.
+   - **mcp_introspection** — `mcp__62dd5e40-9da1-495c-b80a-8a8ddeb93147__models_explore action=get`
+     sobre el modelo. Si Higgsfield MCP no responde, marca la fuente como
+     `partial` con notas (no falles en duro).
+   - **community_forums** — foros/comunidad. Si no hay nada relevante, registra
+     `verbatim_quote = "no relevant forum content found"` (la confianza baja a 0.66).
+   - Si el skill `research` no está disponible en el cliente: responde
+     "skill `research` not available in client; operator must do research manually
+     and provide dossier".
+3. `aurora_record_platform_research(project_id, model_id, output_type, syntax_dossier, sources, ttl_days=30)`
+   — el dossier debe traer `model_id, output_type, prompt_template,
+   continuity_injection, params_schema`; las 3 source types deben estar cubiertas.
+4. `aurora_build_prompt(project_id, model_id, shot_or_element_data, output_type, continuity_strategy?)`
+   → devuelve `prompt_final`, `injection_instructions` (continuidad multishot por
+   plataforma) y `ui_steps` o `mcp_payload` según `route_type`.
+
+El gate `gate_platform_syntax_researched` **bloquea el Execution Pack** si algún
+modelo declarado no tiene dossier fresco. Es bypasseable con sintaxis explícita
+del operador como cualquier otro gate.
 
 ## Reglas
 

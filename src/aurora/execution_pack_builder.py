@@ -25,6 +25,7 @@ from .gates import (
     gate_domain_session_lock,
     gate_higgsfield_light_refresh,
     gate_multishot_anchor_strategy,
+    gate_platform_syntax_researched,
     gate_preproduction_packet,
     gate_production_success_probability,
     gate_prompt_fitness,
@@ -76,6 +77,7 @@ _GATE_INPUTS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "gate_production_success_probability": lambda c: gate_production_success_probability.check(
         c.get("psp_components")
     ),
+    "gate_platform_syntax_researched": lambda c: gate_platform_syntax_researched.check(c),
 }
 
 

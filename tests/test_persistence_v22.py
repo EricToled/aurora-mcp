@@ -82,6 +82,37 @@ def _multishot_packet() -> dict:
     }
 
 
+def _full_sources() -> list[dict]:
+    """Three sources covering all mandatory source_types, each with a quote."""
+    return [
+        {"source_type": "official_docs", "url_or_ref": "https://docs.higgsfield/x",
+         "fetched_at": "2026-05-30", "verbatim_quote": "official syntax quote"},
+        {"source_type": "mcp_introspection", "url_or_ref": "models_explore",
+         "fetched_at": "2026-05-30", "verbatim_quote": "params: {duration, aspect_ratio}"},
+        {"source_type": "community_forums", "url_or_ref": "https://reddit/r/HiggsfieldAI",
+         "fetched_at": "2026-05-30", "verbatim_quote": "community tip quote"},
+    ]
+
+
+def _record_research(model_id: str, output_type: str, pid: str = "p") -> dict:
+    """Persist a valid syntax_dossier so gate_platform_syntax_researched passes."""
+    dossier = {
+        "model_id": model_id,
+        "output_type": output_type,
+        "model_display_name": model_id.replace("_", " ").title(),
+        "prompt_template": "{subject}, {action}, {look}, {camera}",
+        "continuity_injection": {"method": "media_role_start_image",
+                                 "mcp_payload_example": {"medias": [{"roles": ["start_image"]}]},
+                                 "ui_steps": ["click + button", "select previous clip"]},
+        "params_schema": [{"name": "duration", "type": "int", "default": 5}],
+        "known_gotchas": ["avoid 2.35:1"],
+    }
+    return srv.aurora_record_platform_research(
+        project_id=pid, model_id=model_id, output_type=output_type,
+        syntax_dossier=dossier, sources=_full_sources(), ttl_days=30,
+    )
+
+
 @pytest.fixture()
 def server_db(tmp_path, monkeypatch):
     """Isolate the server on a temp DB + session-state file."""
@@ -106,6 +137,9 @@ def _drive_multishot_to_psp(pid: str) -> None:
         {"route_type": "mcp_callable", "verified": True,
          "verification_source": "higgsfield_mcp_live", "confidence": 0.95})
     srv.aurora_validate_preproduction_packet(packet=_multishot_packet(), project_id=pid)
+    # v2.3: the model declared in the packet must have a fresh syntax_dossier or
+    # gate_platform_syntax_researched blocks emit.
+    _record_research("higgsfield_video_v1", "video_multishot", pid)
     srv.aurora_record_quality_score(
         pid, "image", {k: 100 for k in (
             "photorealism", "advertising_look", "lighting_quality", "composition",

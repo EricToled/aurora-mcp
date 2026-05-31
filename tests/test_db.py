@@ -21,15 +21,16 @@ EXPECTED_TABLES = {
     "execution_packs",
     "active_bypasses",
     "gate_evaluations",
+    "platform_syntax_cache",
 }
 
 
 def test_init_db_creates_v21_schema(tmp_path):
     db_path = tmp_path / "test.db"
     tables = db.init_db(db_path)
-    # init_db must yield the full v2.1 schema (17 tables).
+    # init_db must yield the full schema (v2.1 17 tables + v2.3 syntax cache).
     assert set(tables) == EXPECTED_TABLES
-    assert len(tables) == 17
+    assert len(tables) == 18
 
 
 def test_put_artifact_roundtrip(tmp_path):

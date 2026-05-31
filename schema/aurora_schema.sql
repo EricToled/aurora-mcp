@@ -206,6 +206,27 @@ CREATE TABLE IF NOT EXISTS workflows_cache (
 );
 
 -- ---------------------------------------------------------------------------
+-- Platform syntax cache (v2.3 — research-driven prompt construction)
+-- Each (model_id, output_type) gets a syntax_dossier researched from 3 source
+-- types (official docs, MCP introspection, community forums). aurora_build_prompt
+-- reads the freshest non-expired dossier to construct platform-specific MCSLA
+-- prompts; gate_platform_syntax_researched blocks emit when a declared model has
+-- no fresh dossier. Same model can hold distinct dossiers for image vs video.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS platform_syntax_cache (
+  cache_id TEXT PRIMARY KEY,
+  model_id TEXT NOT NULL,
+  output_type TEXT NOT NULL,  -- 'image_genesis'|'image_anchor'|'video_simple'|'video_multishot'
+  syntax_dossier_json TEXT NOT NULL,
+  sources_json TEXT NOT NULL,            -- [{source_type,url_or_ref,fetched_at,verbatim_quote}]
+  source_types_covered_json TEXT NOT NULL,  -- ['official_docs','mcp_introspection','community_forums']
+  fetched_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL,         -- TTL 30 days default
+  confidence REAL DEFAULT 0,             -- 0-1, based on source coverage
+  researched_by TEXT NOT NULL DEFAULT 'operator_via_research_skill'
+);
+
+-- ---------------------------------------------------------------------------
 -- Indexes
 -- ---------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_briefs_project ON briefs(project_id);
@@ -219,3 +240,4 @@ CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
 CREATE INDEX IF NOT EXISTS idx_bypass_project ON bypass_log(project_id);
 CREATE INDEX IF NOT EXISTS idx_gate_eval_project ON gate_evaluations(project_id, gate_name);
 CREATE INDEX IF NOT EXISTS idx_workflows_domain ON workflows_cache(domain, sub_domain, style);
+CREATE INDEX IF NOT EXISTS idx_syntax_cache_model ON platform_syntax_cache(model_id, output_type, fetched_at DESC);

@@ -146,6 +146,101 @@ def _record_gate_eval(
 
 
 # ===========================================================================
+# v2.3 — platform syntax research helpers
+# ===========================================================================
+# output_types AURORA recognizes for a syntax_dossier. Image and video keep
+# distinct dossiers for the same model_id (different prompt grammar).
+_ANCHOR_ELEMENT_TYPES = {"anchor", "character", "product", "prop", "location"}
+
+
+def _dossier_is_fresh(dossier: Optional[dict[str, Any]]) -> bool:
+    """A dossier is usable only if it exists and its TTL has not elapsed.
+    expires_at is stored as an ISO-8601 UTC string, so lexical compare works."""
+    if not dossier:
+        return False
+    expires_at = dossier.get("expires_at")
+    return bool(expires_at) and str(expires_at) > db._now_iso()
+
+
+def _research_required_models(
+    mode: str,
+    packet: dict[str, Any],
+    shot_list: list[dict[str, Any]],
+    elements_rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Map every model the project will execute to its research output_type.
+
+    Pipeline A (image): models behind declared elements (sheet.model_id /
+    recommended_model), else the packet's model_route/recommended_model.
+    Pipeline B/C (video): each shot's mcsla.model, else packet.recommended_model.
+    """
+    models: dict[str, str] = {}
+    if mode == "image":
+        for e in elements_rows or []:
+            sheet = e.get("sheet") or {}
+            model_id = (
+                sheet.get("model_id")
+                or sheet.get("recommended_model")
+                or e.get("recommended_model")
+            )
+            if model_id:
+                category = (e.get("element_type") or "").lower()
+                models[model_id] = (
+                    "image_anchor"
+                    if category in _ANCHOR_ELEMENT_TYPES
+                    else "image_genesis"
+                )
+        if not models:
+            fallback = (packet.get("model_route") or {}).get("model_id") or packet.get(
+                "recommended_model"
+            )
+            if fallback:
+                models[fallback] = "image_genesis"
+    else:  # video_simple | video_multishot
+        for shot in shot_list or packet.get("shot_list") or []:
+            mcsla = shot.get("mcsla") or {}
+            model_id = mcsla.get("model") or packet.get("recommended_model")
+            if model_id:
+                models[model_id] = mode
+        if not models and packet.get("recommended_model"):
+            models[packet["recommended_model"]] = mode
+    return models
+
+
+def _research_coverage(models_required: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """For each declared model, look up its freshest dossier and report coverage
+    so the (pure) gate can decide pass/fail without doing any I/O."""
+    coverage: dict[str, dict[str, Any]] = {}
+    for model_id, output_type in models_required.items():
+        dossier = db.get_latest_syntax_dossier(model_id, output_type, db_path=_db())
+        present = dossier is not None
+        coverage[model_id] = {
+            "output_type": output_type,
+            "present": present,
+            "expired": present and not _dossier_is_fresh(dossier),
+            "confidence": (dossier or {}).get("confidence") if present else None,
+        }
+    return coverage
+
+
+def _research_status_for_models(models_required: dict[str, str]) -> dict[str, Any]:
+    """Operator-facing status surfaced by the propose_* tools, symmetric for
+    image and video: which declared models still need research before emit."""
+    status: dict[str, Any] = {}
+    for model_id, output_type in models_required.items():
+        dossier = db.get_latest_syntax_dossier(model_id, output_type, db_path=_db())
+        fresh = _dossier_is_fresh(dossier)
+        status[model_id] = {
+            "output_type": output_type,
+            "cached": fresh,
+            "missing": dossier is None,
+            "expired": dossier is not None and not fresh,
+            "confidence": (dossier or {}).get("confidence") if dossier else None,
+        }
+    return status
+
+
+# ===========================================================================
 # 1. Intent + capability refresh
 # ===========================================================================
 @mcp.tool()
@@ -346,6 +441,24 @@ def aurora_propose_image_generation(
     aspect = (element_brief.get("format") or {}).get("aspect_ratio")
     element_ids = (element_brief.get("reference_strategy") or {}).get("element_ids") or []
     selection = image_model_router.select_route(image_type, aspect_ratio=aspect, element_ids=element_ids)
+    # v2.3: tell the operator which candidate models still need syntax research
+    # before a prompt can be built (symmetric with video).
+    out_type = "image_anchor" if image_type in _ANCHOR_ELEMENT_TYPES else "image_genesis"
+    candidates: dict[str, str] = {}
+    if selection.get("selected_route"):
+        candidates[selection["selected_route"]["model_id"]] = out_type
+    for cand in (selection.get("ranked_candidates") or [])[:3]:
+        if cand.get("model_id"):
+            candidates[cand["model_id"]] = out_type
+    research_status = _research_status_for_models(candidates)
+    selection["research_status"] = research_status
+    any_missing = any(s["missing"] or s["expired"] for s in research_status.values())
+    selection["next_required_action"] = (
+        "research the selected model via aurora_request_platform_research"
+        f"(model_id, output_type='{out_type}')"
+        if any_missing
+        else None
+    )
     return {"ok": selection["ok"], "project_id": project_id, "proposal": selection}
 
 
@@ -362,6 +475,22 @@ def aurora_propose_video_execution(
     selection = video_model_router.select_route(mode, aspect_ratio=aspect)
     if video_packet.get("finishing"):
         db.put_artifact(project_id, "finishing", video_packet["finishing"], db_path=_db())
+    # v2.3: surface research coverage for every model in consideration.
+    video_out_type = mode if mode in ("video_simple", "video_multishot") else "video_simple"
+    candidates: dict[str, str] = {}
+    if selection.get("selected_route"):
+        candidates[selection["selected_route"]["model_id"]] = video_out_type
+    for cand in (selection.get("ranked_candidates") or [])[:3]:
+        if cand.get("model_id"):
+            candidates[cand["model_id"]] = video_out_type
+    research_status = _research_status_for_models(candidates)
+    selection["research_status"] = research_status
+    any_missing = any(s["missing"] or s["expired"] for s in research_status.values())
+    selection["next_required_action"] = (
+        "research the missing models via aurora_request_platform_research"
+        if any_missing
+        else None
+    )
     return {"ok": selection["ok"], "project_id": project_id, "proposal": selection}
 
 
@@ -384,6 +513,351 @@ def aurora_skip_finishing(project_id: str, reason: str = "") -> dict[str, Any]:
         evaluator_version="finishing/2.2",
     )
     return {"ok": True, "project_id": project_id, "finishing": finishing}
+
+
+# ===========================================================================
+# 4b. Platform syntax research + prompt construction (v2.3)
+# ===========================================================================
+_RESEARCH_OUTPUT_TYPES = {
+    "image_genesis",
+    "image_anchor",
+    "video_simple",
+    "video_multishot",
+}
+_REQUIRED_SOURCE_TYPES = {"official_docs", "mcp_introspection", "community_forums"}
+_REQUIRED_DOSSIER_FIELDS = {
+    "model_id",
+    "output_type",
+    "prompt_template",
+    "continuity_injection",
+    "params_schema",
+}
+_HIGGSFIELD_MCP = "mcp__62dd5e40-9da1-495c-b80a-8a8ddeb93147__models_explore"
+
+
+@mcp.tool()
+def aurora_request_platform_research(
+    project_id: str,
+    model_id: str,
+    output_type: str,
+    shot_context: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Return a structured research_brief the client must execute via the
+    `research` skill, covering 3 mandatory source types (official_docs,
+    mcp_introspection, community_forums). If a fresh dossier already exists for
+    (model_id, output_type), returns cached=True with it instead — no re-research.
+
+    output_type ∈ {image_genesis, image_anchor, video_simple, video_multishot}.
+    """
+    project_id = project_id or (shot_context or {}).get("project_id")
+    if not project_id:
+        return {"ok": False, "error": "project_id required (as kwarg or in shot_context)"}
+    if output_type not in _RESEARCH_OUTPUT_TYPES:
+        return {
+            "ok": False,
+            "error": f"invalid output_type '{output_type}'",
+            "allowed": sorted(_RESEARCH_OUTPUT_TYPES),
+        }
+    _ensure_db()
+
+    cached = db.get_latest_syntax_dossier(model_id, output_type, db_path=_db())
+    if _dossier_is_fresh(cached):
+        return {
+            "ok": True,
+            "cached": True,
+            "cache_id": cached["cache_id"],
+            "syntax_dossier": cached["syntax_dossier"],
+            "expires_at": cached["expires_at"],
+            "confidence": cached.get("confidence"),
+        }
+
+    is_image = output_type.startswith("image")
+    injection_term = (
+        "reference element injection" if is_image else "continuity reference injection"
+    )
+    forum_kind = "still image" if is_image else "multishot continuity"
+    brief = {
+        "research_required": True,
+        "model_id": model_id,
+        "output_type": output_type,
+        "shot_context": shot_context,
+        "required_sources_min": 3,
+        "queries_per_source": {
+            "official_docs": [
+                f"{model_id} Higgsfield official documentation prompt syntax {output_type}",
+                f"{model_id} parameters schema {output_type}",
+                f"Higgsfield {model_id} {injection_term}",
+            ],
+            "mcp_introspection": [
+                f"Call: {_HIGGSFIELD_MCP} action=get model_id={model_id}",
+                "Extract: parameters, aspect_ratios, medias roles, duration_range",
+            ],
+            "community_forums": [
+                f"reddit r/HiggsfieldAI {model_id} best prompt",
+                f"github OSideMedia higgsfield-ai-prompt-skill {model_id}",
+                f"{model_id} {forum_kind} prompt example",
+                f"{model_id} site:github.com OR site:reddit.com",
+            ],
+        },
+        "expected_dossier_schema": "see syntax_dossier schema in the v2.3 spec",
+        "ttl_days": 30,
+        "instructions": (
+            "Invoke the `research` skill with the queries above. It must hit ALL 3 "
+            "source types. Extract verbatim quotes from each. Build a syntax_dossier "
+            "following the documented schema. Then call aurora_record_platform_research "
+            "with the dossier + sources. If the `research` skill is unavailable, the "
+            "operator must research manually and supply the dossier."
+        ),
+    }
+    return {"ok": True, "cached": False, "research_brief": brief}
+
+
+@mcp.tool()
+def aurora_record_platform_research(
+    project_id: str,
+    model_id: str,
+    output_type: str,
+    syntax_dossier: dict[str, Any],
+    sources: list[dict[str, Any]],
+    ttl_days: int = 30,
+) -> dict[str, Any]:
+    """Persist the syntax_dossier resulting from the client's research. Rejects
+    the record unless ``sources`` covers all 3 mandatory source types, so a
+    half-researched dossier can never silently power prompt construction.
+    Confidence scales with source coverage (+bonus for verbatim quotes)."""
+    if output_type not in _RESEARCH_OUTPUT_TYPES:
+        return {
+            "ok": False,
+            "error": f"invalid output_type '{output_type}'",
+            "allowed": sorted(_RESEARCH_OUTPUT_TYPES),
+        }
+    found_source_types = {s.get("source_type") for s in (sources or [])}
+    missing = _REQUIRED_SOURCE_TYPES - found_source_types
+    if missing:
+        return {
+            "ok": False,
+            "error": f"missing required source types: {sorted(missing)}",
+            "required": sorted(_REQUIRED_SOURCE_TYPES),
+            "found": sorted(t for t in found_source_types if t),
+        }
+
+    missing_fields = _REQUIRED_DOSSIER_FIELDS - set((syntax_dossier or {}).keys())
+    if missing_fields:
+        return {"ok": False, "error": f"dossier missing fields: {sorted(missing_fields)}"}
+
+    covered = found_source_types & _REQUIRED_SOURCE_TYPES
+    confidence = len(covered) / 3.0
+    quote_count = sum(1 for s in sources if s.get("verbatim_quote"))
+    if quote_count >= 3:
+        confidence = min(1.0, confidence + 0.1)
+
+    _ensure_db()
+    cache_id = db.insert_syntax_dossier(
+        model_id=model_id,
+        output_type=output_type,
+        syntax_dossier=syntax_dossier,
+        sources=sources,
+        source_types_covered=sorted(covered),
+        ttl_days=ttl_days,
+        confidence=confidence,
+        db_path=_db(),
+    )
+    return {
+        "ok": True,
+        "cache_id": cache_id,
+        "model_id": model_id,
+        "output_type": output_type,
+        "expires_in_days": ttl_days,
+        "confidence": confidence,
+        "sources_count": len(sources),
+    }
+
+
+@mcp.tool()
+def aurora_build_prompt(
+    project_id: str,
+    model_id: str,
+    shot_or_element_data: dict[str, Any],
+    output_type: str,
+    continuity_strategy: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Construct the final MCSLA prompt with the SELECTED model's specific syntax,
+    reading the cached syntax_dossier. Blocks (with an actionable research call)
+    when no fresh dossier exists. output_type is REQUIRED — no hidden default.
+
+    Pipeline A (image): shot_or_element_data is an element_brief.
+    Pipeline B/C (video): it is a shot (MCSLA + continuity context).
+    """
+    if output_type not in _RESEARCH_OUTPUT_TYPES:
+        return {
+            "ok": False,
+            "error": f"invalid output_type '{output_type}'",
+            "allowed": sorted(_RESEARCH_OUTPUT_TYPES),
+        }
+    _ensure_db()
+    dossier_row = db.get_latest_syntax_dossier(model_id, output_type, db_path=_db())
+    if not _dossier_is_fresh(dossier_row):
+        return {
+            "ok": False,
+            "error": "research required: no fresh syntax_dossier for this "
+            f"model+output_type ({model_id}, {output_type})",
+            "required_action": "call aurora_request_platform_research first",
+            "next_call": {
+                "tool": "aurora_request_platform_research",
+                "args": {
+                    "project_id": project_id,
+                    "model_id": model_id,
+                    "output_type": output_type,
+                },
+            },
+        }
+
+    dossier = dossier_row["syntax_dossier"]
+    data = shot_or_element_data or {}
+    prompt_final = _render_prompt_with_dossier(dossier, data)
+    warnings = _validate_prompt_against_dossier(prompt_final, dossier)
+
+    injection = None
+    strategy = continuity_strategy or data.get("continuity")
+    if output_type == "video_multishot" and isinstance(strategy, dict) and (
+        strategy.get("case_type") == "continuity_from_previous"
+        or strategy.get("continuity_ref_type") not in (None, "", "none")
+    ):
+        injection = _build_continuity_injection(
+            dossier.get("continuity_injection") or {}, strategy
+        )
+
+    ui_steps = None
+    mcp_payload = None
+    if data.get("route_type") == "ui_only":
+        ui_steps = _render_ui_steps(dossier, data, injection)
+    else:
+        mcp_payload = _render_mcp_payload(dossier, data, injection)
+
+    return {
+        "ok": True,
+        "model_id": model_id,
+        "output_type": output_type,
+        "prompt_final": prompt_final,
+        "injection_instructions": injection,
+        "ui_steps": ui_steps,
+        "mcp_payload": mcp_payload,
+        "warnings": warnings,
+        "gotchas_relevantes": dossier.get("known_gotchas", []),
+        "confidence": dossier_row.get("confidence"),
+    }
+
+
+# --- prompt rendering helpers (deterministic; no model calls) ---------------
+def _as_text(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value or "")
+
+
+def _camera_text(camera: Any) -> str:
+    if isinstance(camera, dict):
+        parts = [
+            str(camera.get("body", "")),
+            f"{camera.get('focal_mm')}mm" if camera.get("focal_mm") else "",
+            str(camera.get("movement", "")),
+        ]
+        return " ".join(p for p in parts if p).strip()
+    return str(camera or "")
+
+
+def _render_prompt_with_dossier(dossier: dict[str, Any], data: dict[str, Any]) -> str:
+    """Fill the dossier's prompt_template with MCSLA slots. Uses str.replace so
+    an unknown placeholder is left intact rather than raising (truth > crash)."""
+    template = dossier.get("prompt_template") or "{subject}, {action}, {look}, {camera}"
+    fmt = data.get("format") or {}
+    slots = {
+        "subject": _as_text(data.get("subject") or data.get("name")),
+        "action": _as_text(data.get("action")),
+        "look": _as_text(data.get("look") or data.get("visual_style")),
+        "camera": _camera_text(data.get("camera")),
+        "negative": _as_text(data.get("negative_constraints")),
+        "aspect_ratio": str(fmt.get("aspect_ratio") or data.get("aspect_ratio") or ""),
+        "duration": str(data.get("duration_seconds") or ""),
+        "brand_or_product": _as_text(data.get("brand_or_product")),
+    }
+    out = template
+    for key, value in slots.items():
+        out = out.replace("{" + key + "}", value)
+    return out.strip().strip(",").strip()
+
+
+def _validate_prompt_against_dossier(
+    prompt: str, dossier: dict[str, Any]
+) -> list[str]:
+    """Surface dossier-declared anti-patterns present in the built prompt and
+    required-field reminders. Reporting only — never blocks."""
+    warnings: list[str] = []
+    lowered = prompt.lower()
+    for forbidden in dossier.get("forbidden_in_prompt", []) or []:
+        token = str(forbidden).lower()
+        if token and token in lowered:
+            warnings.append(f"prompt contains a forbidden pattern: {forbidden}")
+    max_chars = dossier.get("prompt_max_chars") or 0
+    if max_chars and len(prompt) > int(max_chars):
+        warnings.append(
+            f"prompt is {len(prompt)} chars, over the model max of {max_chars}"
+        )
+    return warnings
+
+
+def _build_continuity_injection(
+    continuity_injection: dict[str, Any], strategy: dict[str, Any]
+) -> dict[str, Any]:
+    """Combine the dossier's platform continuity method with this shot's concrete
+    previous-clip reference, so the operator gets exact injection instructions."""
+    return {
+        "method": continuity_injection.get("method", ""),
+        "mcp_payload_example": continuity_injection.get("mcp_payload_example", {}),
+        "ui_steps": continuity_injection.get("ui_steps", []),
+        "notes": continuity_injection.get("notes", ""),
+        "previous_clip_ref": strategy.get("previous_clip_ref")
+        or strategy.get("continuity_ref_type"),
+        "case_type": strategy.get("case_type", "continuity_from_previous"),
+    }
+
+
+def _render_ui_steps(
+    dossier: dict[str, Any], data: dict[str, Any], injection: Optional[dict[str, Any]]
+) -> list[str]:
+    steps = [
+        f"Open {dossier.get('model_display_name') or dossier.get('model_id')} in the Higgsfield UI.",
+        "Paste prompt_final into the prompt panel.",
+    ]
+    ar = (data.get("format") or {}).get("aspect_ratio") or data.get("aspect_ratio")
+    if ar:
+        steps.append(f"Set aspect ratio to {ar}.")
+    if injection:
+        steps.extend(injection.get("ui_steps") or [])
+        if injection.get("previous_clip_ref"):
+            steps.append(
+                f"Inject continuity via {injection.get('method')}: "
+                f"{injection['previous_clip_ref']}."
+            )
+    return steps
+
+
+def _render_mcp_payload(
+    dossier: dict[str, Any], data: dict[str, Any], injection: Optional[dict[str, Any]]
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {"model_id": dossier.get("model_id")}
+    for param in dossier.get("params_schema", []) or []:
+        name = param.get("name")
+        if name and param.get("default") is not None:
+            payload[name] = param.get("default")
+    ar = (data.get("format") or {}).get("aspect_ratio") or data.get("aspect_ratio")
+    if ar:
+        payload["aspect_ratio"] = ar
+    if data.get("duration_seconds"):
+        payload["duration"] = data["duration_seconds"]
+    if injection and injection.get("mcp_payload_example"):
+        payload["medias"] = injection["mcp_payload_example"].get("medias", [])
+    return payload
 
 
 # ===========================================================================
@@ -996,7 +1470,15 @@ def _assemble_context(
     if not global_ui_config:
         global_ui_config = _global_ui_from_packet(packet, prompt_packet)
 
+    # v2.3: research coverage is computed here (with db access) so the gate stays
+    # pure. Every model the project will execute must hold a fresh syntax_dossier.
+    mode = project.get("mode") or "image"
+    research_models = _research_required_models(mode, packet, shot_list, elements_rows)
+    research_coverage = _research_coverage(research_models)
+
     return {
+        "mode": mode,
+        "research_coverage": research_coverage,
         "domain_lock": domain_lock,
         "refresh_snapshot": snapshot,
         "packet": packet,
@@ -1045,6 +1527,7 @@ _EXPECTED_TABLES = {
     "reference_packs",
     "jobs",
     "workflows_cache",
+    "platform_syntax_cache",
 }
 
 _REQUIRED_TOOLS = {
@@ -1073,6 +1556,10 @@ _REQUIRED_TOOLS = {
     "aurora_resolve_model_alias",
     "aurora_validate_element_injection",
     "aurora_validate_aspect_ratio",
+    # v2.3 research-driven prompt construction
+    "aurora_request_platform_research",
+    "aurora_record_platform_research",
+    "aurora_build_prompt",
     # deployed Sprint 1 tool, kept working
     "aurora_create_video_brief",
 }

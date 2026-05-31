@@ -40,6 +40,7 @@ GATE_COMPONENTS = frozenset({
     "gate_continuity_readiness",
     "gate_upscale_finishing_route",
     "gate_production_success_probability",
+    "gate_platform_syntax_researched",
 })
 
 # Pipeline steps that are bypassable but are not Execution-Pack gates.

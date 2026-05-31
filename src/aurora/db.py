@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -928,5 +928,78 @@ def get_latest_gate_evaluations(
             )
             latest[d["gate_name"]] = d  # later rows overwrite earlier -> newest wins
         return latest
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Platform syntax cache (v2.3 — research-driven prompt construction)
+# ---------------------------------------------------------------------------
+def insert_syntax_dossier(
+    model_id: str,
+    output_type: str,
+    syntax_dossier: dict[str, Any],
+    sources: list[dict[str, Any]],
+    source_types_covered: list[str],
+    ttl_days: int = 30,
+    confidence: float = 0.0,
+    researched_by: str = "operator_via_research_skill",
+    db_path: Optional[str | Path] = None,
+) -> str:
+    """Persist a researched syntax_dossier for a (model_id, output_type) with a
+    TTL. Returns the cache_id. Newer rows win (read path orders by fetched_at)."""
+    cache_id = str(uuid.uuid4())
+    fetched_at = _now_iso()
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=int(ttl_days))
+    ).isoformat()
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO platform_syntax_cache (cache_id, model_id, output_type, "
+            "syntax_dossier_json, sources_json, source_types_covered_json, "
+            "fetched_at, expires_at, confidence, researched_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                cache_id,
+                model_id,
+                output_type,
+                json.dumps(syntax_dossier),
+                json.dumps(sources),
+                json.dumps(sorted(source_types_covered)),
+                fetched_at,
+                expires_at,
+                float(confidence),
+                researched_by,
+            ),
+        )
+        conn.commit()
+        return cache_id
+    finally:
+        conn.close()
+
+
+def get_latest_syntax_dossier(
+    model_id: str, output_type: str, db_path: Optional[str | Path] = None
+) -> Optional[dict[str, Any]]:
+    """Return the most-recently-fetched dossier row for (model_id, output_type),
+    or None. JSON columns are decoded into syntax_dossier/sources/source_types.
+    The caller decides freshness by comparing expires_at to now (ISO strings)."""
+    conn = get_conn(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM platform_syntax_cache WHERE model_id = ? AND "
+            "output_type = ? ORDER BY fetched_at DESC, rowid DESC LIMIT 1",
+            (model_id, output_type),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["syntax_dossier"] = json.loads(d.get("syntax_dossier_json") or "{}")
+        d["sources"] = json.loads(d.get("sources_json") or "[]")
+        d["source_types_covered"] = json.loads(
+            d.get("source_types_covered_json") or "[]"
+        )
+        return d
     finally:
         conn.close()
