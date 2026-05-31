@@ -188,6 +188,40 @@ def test_14_sqlite_roundtrip(tmp_path):
     assert sid and db.get_latest_snapshot(db_path=p)["snapshot"] == {"a": 1}
 
 
+# --- 14b. Server score_type vocabulary maps to the DB CHECK -----------------
+def test_14b_score_type_canonicalization(tmp_path, monkeypatch):
+    # Regression: the _SCORERS registry keys (e.g. "advertising_image_quality",
+    # "production_success_probability") are NOT the values the quality_scores
+    # CHECK allows ("image"..."production_probability"). The server tools must
+    # map either spelling to the canonical value so record_quality_score and
+    # compute_production_success_probability persist without a CHECK failure,
+    # and _image_scores can read them back for the quality-ceiling gate.
+    import importlib
+    from aurora import server as srv
+
+    db_path = tmp_path / "scores.db"
+    monkeypatch.setattr(srv, "DB_PATH", db_path)
+    importlib.reload  # keep ref; DB_PATH patched directly
+    srv._ensure_db()
+    pid = srv.aurora_create_project("8s hero ad", "video_simple", "hero_ad")["project_id"]
+
+    # Both the descriptive alias and the canonical name must succeed.
+    assert srv.aurora_record_quality_score(pid, "image", {"identity": 92})["ok"]
+    assert srv.aurora_record_quality_score(pid, "advertising_image_quality", {"identity": 80})["ok"]
+    # The quality-ceiling helper reads the canonical "image" rows back.
+    assert len(srv._image_scores(pid)) == 2
+
+    # PSP must persist as the canonical "production_probability" (CHECK value).
+    srv.aurora_record_psp_components(pid, {k: 90 for k in (
+        "identity_stability", "biomechanical_credibility", "prompt_fitness",
+        "route_verification", "anchor_readiness", "benchmark_alignment",
+        "technical_feasibility")})
+    psp = srv.aurora_compute_production_success_probability(pid)
+    assert psp["ok"], psp
+    rows = db.get_quality_scores(pid, score_type="production_probability", db_path=str(db_path))
+    assert rows, "PSP score must be stored under the canonical score_type"
+
+
 # --- 15. Production Success Probability calcula correctamente ----------------
 def test_15_psp_computation():
     perfect = {k: 100 for k in production_success_probability.COMPONENT_WEIGHTS}

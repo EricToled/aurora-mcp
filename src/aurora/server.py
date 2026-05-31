@@ -64,6 +64,7 @@ mcp = FastMCP("aurora", host=_HTTP_HOST, port=_HTTP_PORT)
 
 # score_type -> scorer module (each exposes score(data) -> dict).
 _SCORERS = {
+    # descriptive aliases
     "advertising_image_quality": advertising_quality_score,
     "advertising_quality": advertising_quality_score,
     "video_quality": video_quality_score,
@@ -71,6 +72,34 @@ _SCORERS = {
     "biomechanical": biomechanical_score,
     "prompt_fitness": prompt_fitness_score,
     "production_success_probability": production_success_probability,
+    # canonical score_type names (must match the quality_scores CHECK)
+    "image": advertising_quality_score,
+    "video": video_quality_score,
+    "multishot": multishot_continuity_score,
+    "biomechanics": biomechanical_score,
+    "prompt": prompt_fitness_score,
+    "production_probability": production_success_probability,
+}
+
+# Every accepted score_type maps to the canonical value the DB CHECK allows:
+# quality_scores.score_type IN ('image','video','multishot','biomechanics',
+# 'prompt','production_probability'). The public tool API accepts either the
+# descriptive alias or the canonical name, but we always persist the canonical
+# one so the CHECK constraint (and downstream gate reads) stay consistent.
+_SCORE_TYPE_CANON = {
+    "advertising_image_quality": "image",
+    "advertising_quality": "image",
+    "image": "image",
+    "video_quality": "video",
+    "video": "video",
+    "multishot_continuity": "multishot",
+    "multishot": "multishot",
+    "biomechanical": "biomechanics",
+    "biomechanics": "biomechanics",
+    "prompt_fitness": "prompt",
+    "prompt": "prompt",
+    "production_success_probability": "production_probability",
+    "production_probability": "production_probability",
 }
 
 
@@ -336,9 +365,10 @@ def aurora_record_quality_score(
     if scorer is None:
         return {"ok": False, "reason": f"unknown score_type: {score_type}"}
     result = scorer.score(score_data)
+    canon = _SCORE_TYPE_CANON.get(score_type, score_type)
     db.insert_quality_score(
         project_id=project_id,
-        score_type=score_type,
+        score_type=canon,
         score_data={**score_data, **result},
         total_score=int(result["total_score"]),
         hard_fail_reason=result.get("hard_fail_reason"),
@@ -426,7 +456,7 @@ def aurora_compute_production_success_probability(project_id: str) -> dict[str, 
     db.put_artifact(project_id, "psp_result", result, db_path=_db())
     db.insert_quality_score(
         project_id=project_id,
-        score_type="production_success_probability",
+        score_type="production_probability",
         score_data={**components, **result},
         total_score=int(result["total_score"]),
         db_path=_db(),
@@ -568,7 +598,7 @@ def _benchmark_pack(project_id: str) -> Optional[dict[str, Any]]:
 
 
 def _image_scores(project_id: str) -> list[dict[str, Any]]:
-    rows = db.get_quality_scores(project_id, score_type="advertising_image_quality", db_path=_db())
+    rows = db.get_quality_scores(project_id, score_type="image", db_path=_db())
     out = []
     for r in rows:
         score_blob = r.get("score") or {}
