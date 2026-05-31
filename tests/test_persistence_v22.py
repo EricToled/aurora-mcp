@@ -155,6 +155,26 @@ def test_preproduction_packet_persists(server_db):
     assert db.get_artifact(pid, "shot_list", db_path=str(server_db))
 
 
+def test_validate_requires_project_id(server_db):
+    # A forgotten project_id kwarg used to persist nothing silently, so emit
+    # later read an empty DB and rendered a ceremonial-green-but-empty pack.
+    # The tool now refuses without an id instead of failing silently.
+    out = srv.aurora_validate_preproduction_packet(packet={"shot_list": [{}]})
+    assert out["ok"] is False
+    assert "project_id required" in out["error"]
+
+
+def test_validate_falls_back_to_project_id_in_packet(server_db):
+    # If the kwarg is omitted but the packet carries its own project_id, use it —
+    # the verdict is still persisted and emit can read it back.
+    pid = srv.aurora_create_project("vivaldi", "video_multishot", "performance")["project_id"]
+    packet = dict(_multishot_packet(), project_id=pid)
+    out = srv.aurora_validate_preproduction_packet(packet=packet)
+    assert out["passed"] is True
+    recorded = db.get_latest_gate_evaluations(pid, db_path=str(server_db))
+    assert recorded["gate_preproduction_packet"]["status"] == "pass"
+
+
 # --- Bug #9: a logged bypass is honored at emit -----------------------------
 def test_bypass_ids_honored_in_emit(server_db):
     pid = srv.aurora_create_project("vivaldi", "video_multishot", "performance")["project_id"]

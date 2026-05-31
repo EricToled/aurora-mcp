@@ -268,27 +268,39 @@ def aurora_validate_preproduction_packet(
 ) -> dict[str, Any]:
     """Run the 'regla inviolable' gate over a preproduction packet (Sección 7).
     Reporting only — does not block. Persists the packet + records the gate
-    verdict when project_id is given, so emit reads the same result (bug #8)."""
+    verdict so emit reads the same result (bug #8).
+
+    project_id is REQUIRED: pass it as a kwarg or carry it inside the packet.
+    Without it the verdict can't be persisted, emit reads an empty DB, and the
+    pack renders ceremonial-green-but-empty. Falling back to packet['project_id']
+    closes the whole class of silent 'forgot the kwarg' bugs."""
     packet = packet or {}
+    project_id = project_id or packet.get("project_id")
+    if not project_id:
+        return {
+            "ok": False,
+            "passed": False,
+            "error": "project_id required (as kwarg or in packet); "
+            "without it the verdict is not persisted and emit reads an empty DB",
+        }
     result = gate_preproduction_packet.validate_packet(packet)
-    if project_id:
-        _ensure_db()
-        db.put_artifact(project_id, "preproduction_packet", packet, db_path=_db())
-        # The shot_list lives inside the packet; persist it on its own so the
-        # continuity + multishot gates read it without a separate check (bug #10).
-        shot_list = packet.get("shot_list")
-        if isinstance(shot_list, list) and shot_list:
-            db.put_artifact(project_id, "shot_list", shot_list, db_path=_db())
-        db.put_gate_evaluation(
-            project_id=project_id,
-            gate_name="gate_preproduction_packet",
-            status="pass" if result.passed else "fail",
-            reasons=[f"missing: {m}" for m in result.missing],
-            notes="; ".join(result.warnings),
-            packet=packet,
-            evaluator_version="preproduction/2.2",
-            db_path=_db(),
-        )
+    _ensure_db()
+    db.put_artifact(project_id, "preproduction_packet", packet, db_path=_db())
+    # The shot_list lives inside the packet; persist it on its own so the
+    # continuity + multishot gates read it without a separate check (bug #10).
+    shot_list = packet.get("shot_list")
+    if isinstance(shot_list, list) and shot_list:
+        db.put_artifact(project_id, "shot_list", shot_list, db_path=_db())
+    db.put_gate_evaluation(
+        project_id=project_id,
+        gate_name="gate_preproduction_packet",
+        status="pass" if result.passed else "fail",
+        reasons=[f"missing: {m}" for m in result.missing],
+        notes="; ".join(result.warnings),
+        packet=packet,
+        evaluator_version="preproduction/2.2",
+        db_path=_db(),
+    )
     return result.model_dump()
 
 
