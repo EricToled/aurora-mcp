@@ -22,18 +22,57 @@ from pydantic import BaseModel
 
 from . import db
 
-BYPASSABLE_COMPONENTS = {
-    "gate_step_0",
+# Operator sovereignty (Sección F/K): ANY gate that can block Execution Pack
+# emission must be bypassable. These are the canonical gate names — they MUST
+# stay in sync with gates.GATE_MODULES (the test_coherence meta-test enforces
+# this). evaluate_gates() looks up active bypasses by these exact names.
+GATE_COMPONENTS = frozenset({
+    "gate_domain_session_lock",
+    "gate_higgsfield_light_refresh",
     "gate_preproduction_packet",
-    "gate_continuity_anchors",
-    "biomechanical_check",
-    "prompt_linter",
-    "router_ui_vs_mcp",
+    "gate_benchmark_pack",
+    "gate_route_verification",
+    "gate_step_0_quality_ceiling",
+    "gate_anchors_audited",
+    "gate_biomechanical_sanity",
+    "gate_prompt_fitness",
+    "gate_multishot_anchor_strategy",
+    "gate_continuity_readiness",
+    "gate_upscale_finishing_route",
+    "gate_production_success_probability",
+})
+
+# Pipeline steps that are bypassable but are not Execution-Pack gates.
+NON_GATE_COMPONENTS = frozenset({
     "model_selection",
-    "tribal_mining_freshness",
     "theme_resolver",
-    "all",
+})
+
+# Legacy Sprint-1 names kept accepted; each maps to the canonical gate it now
+# corresponds to so an old OVERRIDE directive still bypasses the right gate.
+LEGACY_ALIASES = {
+    "gate_step_0": "gate_step_0_quality_ceiling",
+    "gate_continuity_anchors": "gate_anchors_audited",
+    "biomechanical_check": "gate_biomechanical_sanity",
+    "prompt_linter": "gate_prompt_fitness",
+    "router_ui_vs_mcp": "gate_route_verification",
+    "tribal_mining_freshness": "gate_higgsfield_light_refresh",
 }
+
+BYPASSABLE_COMPONENTS = (
+    GATE_COMPONENTS
+    | NON_GATE_COMPONENTS
+    | frozenset(LEGACY_ALIASES)
+    | {"all"}
+)
+
+
+def canonical_component(component: str) -> str:
+    """Map a legacy alias to the canonical gate name; pass others through.
+
+    The Execution Pack evaluates bypasses by canonical gate name, so a bypass
+    must be stored under the canonical name to actually take effect."""
+    return LEGACY_ALIASES.get(component, component)
 
 SESSION_STATE_PATH = Path.home() / ".aurora" / "session_state.json"
 

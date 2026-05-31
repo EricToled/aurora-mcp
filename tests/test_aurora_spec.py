@@ -205,9 +205,11 @@ def test_14b_score_type_canonicalization(tmp_path, monkeypatch):
     srv._ensure_db()
     pid = srv.aurora_create_project("8s hero ad", "video_simple", "hero_ad")["project_id"]
 
-    # Both the descriptive alias and the canonical name must succeed.
-    assert srv.aurora_record_quality_score(pid, "image", {"identity": 92})["ok"]
-    assert srv.aurora_record_quality_score(pid, "advertising_image_quality", {"identity": 80})["ok"]
+    # Both the descriptive alias and the canonical name must succeed (using
+    # real image-scorer criteria keys).
+    assert srv.aurora_record_quality_score(pid, "image", {"photorealism": 92})["ok"]
+    assert srv.aurora_record_quality_score(
+        pid, "advertising_image_quality", {"photorealism": 80})["ok"]
     # The quality-ceiling helper reads the canonical "image" rows back.
     assert len(srv._image_scores(pid)) == 2
 

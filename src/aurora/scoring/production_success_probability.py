@@ -26,6 +26,7 @@ COMPONENT_WEIGHTS = {
 def score(data: dict[str, Any]) -> dict[str, Any]:
     breakdown: dict[str, dict[str, float]] = {}
     total = 0.0
+    recognized = sum(1 for c in COMPONENT_WEIGHTS if c in data)
     for component, weight in COMPONENT_WEIGHTS.items():
         raw = data.get(component, 0)
         try:
@@ -51,4 +52,6 @@ def score(data: dict[str, Any]) -> dict[str, Any]:
         "passed": passed,
         "weakest_component": weakest,
         "breakdown": breakdown,
+        "recognized_criteria": recognized,
+        "expected_criteria": list(COMPONENT_WEIGHTS.keys()),
     }

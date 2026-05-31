@@ -87,6 +87,8 @@ def evaluate_gates(
     """Run every required gate for the mode. A failing gate blocks unless an
     active bypass names it. Returns gate rows + the list of true blockers."""
     active_bypasses = active_bypasses or {}
+    # An "all" bypass (BYPASS AURORA) covers every gate — operator sovereignty.
+    bypass_all = active_bypasses.get("all")
     required = gates_pkg.required_gates_for_mode(mode)
     rows: list[dict[str, Any]] = []
     blocking: list[dict[str, Any]] = []
@@ -98,6 +100,8 @@ def evaluate_gates(
             continue
         result = runner(context)
         bypass_reason = active_bypasses.get(name)
+        if bypass_reason is None and bypass_all is not None:
+            bypass_reason = f"BYPASS AURORA: {bypass_all}"
         if result.passed:
             status = "pass"
         elif bypass_reason is not None:

@@ -48,6 +48,7 @@ from .routers import (
 from .scoring import (
     advertising_quality_score,
     biomechanical_score,
+    expected_criteria_for,
     multishot_continuity_score,
     production_success_probability,
     prompt_fitness_score,
@@ -365,6 +366,16 @@ def aurora_record_quality_score(
     if scorer is None:
         return {"ok": False, "reason": f"unknown score_type: {score_type}"}
     result = scorer.score(score_data)
+    if result.get("recognized_criteria", 1) == 0:
+        return {
+            "ok": False,
+            "reason": (
+                f"score_data for '{score_type}' contained none of the expected "
+                f"per-criterion keys (each 0-100). Got keys "
+                f"{sorted(score_data.keys())}."
+            ),
+            "expected_criteria": result.get("expected_criteria", []),
+        }
     canon = _SCORE_TYPE_CANON.get(score_type, score_type)
     db.insert_quality_score(
         project_id=project_id,
@@ -412,7 +423,18 @@ def aurora_check_prompt_fitness(
     """Check Prompt Fitness (Sección 3.6 / 7.1)."""
     _ensure_db()
     db.put_artifact(project_id, "prompt_packet", prompt_packet or {}, db_path=_db())
-    return gate_prompt_fitness.check(prompt_packet).model_dump()
+    result = gate_prompt_fitness.check(prompt_packet).model_dump()
+    # Loud shape guard: prompt_fitness expects per-criterion rubric scores
+    # (0-100), NOT raw prompt text. If none are present, say so explicitly so a
+    # near-zero score is never mistaken for "the prompt is bad".
+    expected = expected_criteria_for(prompt_fitness_score)
+    if isinstance(prompt_packet, dict) and not any(k in prompt_packet for k in expected):
+        result["input_shape_warning"] = (
+            "prompt_packet contained none of the expected rubric keys "
+            f"{expected} (each 0-100). The score reflects missing scores, not "
+            "prompt quality. Provide per-criterion fitness scores."
+        )
+    return result
 
 
 @mcp.tool()
@@ -540,6 +562,9 @@ def aurora_log_bypass(
     if scope not in ("current_turn", "persist", "all_session"):
         scope = "current_turn"
 
+    # Store under the canonical gate name so the bypass actually takes effect
+    # when build_execution_pack evaluates gates by canonical name.
+    component = bypass_handler.canonical_component(component)
     directive = bypass_handler.BypassDirective(
         component=component,
         reason=reason,
@@ -549,7 +574,7 @@ def aurora_log_bypass(
     bypass_id = bypass_handler.log_bypass(directive, db_path=_db())
     if scope in ("persist", "all_session"):
         db.set_active_bypass(component, scope, reason, db_path=_db())
-    return {"ok": True, "bypass_id": bypass_id, "scope": scope}
+    return {"ok": True, "bypass_id": bypass_id, "scope": scope, "component": component}
 
 
 @mcp.tool()

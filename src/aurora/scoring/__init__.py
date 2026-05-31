@@ -24,6 +24,7 @@ def weighted_score(
     hard_fails = [h for h in (data.get("hard_fails") or []) if h]
     breakdown: dict[str, dict[str, float]] = {}
     total = 0.0
+    recognized = sum(1 for c in weights if c in data)
     for criterion, weight in weights.items():
         raw = data.get(criterion, 0)
         try:
@@ -53,4 +54,16 @@ def weighted_score(
         "hard_fail": hard_fail,
         "hard_fail_reason": hard_fail_reason,
         "breakdown": breakdown,
+        # How many of the expected per-criterion keys were actually supplied.
+        # 0 means the caller passed the wrong shape (e.g. prompt *content*
+        # instead of rubric scores) — surfaced so it never silently scores 0.
+        "recognized_criteria": recognized,
+        "expected_criteria": list(weights.keys()),
     }
+
+
+def expected_criteria_for(scorer: Any) -> list[str]:
+    """Return a scorer module's expected per-criterion keys (WEIGHTS or, for
+    PSP, COMPONENT_WEIGHTS). Used by the tools to validate input shape."""
+    weights = getattr(scorer, "WEIGHTS", None) or getattr(scorer, "COMPONENT_WEIGHTS", None) or {}
+    return list(weights.keys())
