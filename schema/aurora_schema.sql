@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS briefs (
   brief_id TEXT PRIMARY KEY,
   project_id TEXT REFERENCES projects(project_id),
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  brief_type TEXT CHECK(brief_type IN ('image','video','multishot') OR brief_type IS NULL),
+  brief_type TEXT CHECK(brief_type IN ('image','video','multishot') OR brief_type LIKE 'artifact:%' OR brief_type IS NULL),
   brief_json TEXT NOT NULL,
   validated_at TIMESTAMP,
   gate_result_json TEXT

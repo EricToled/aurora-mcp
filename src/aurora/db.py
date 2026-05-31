@@ -65,6 +65,48 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     return row is not None
 
 
+def _migrate_briefs_brief_type_check(conn: sqlite3.Connection) -> None:
+    """Widen the briefs.brief_type CHECK to allow 'artifact:%' rows.
+
+    SQLite cannot ALTER a CHECK constraint, so rebuild the table when an older
+    DB still carries the narrow constraint. Idempotent: a no-op once the live
+    DDL already permits artifact rows.
+    """
+    if not _table_exists(conn, "briefs"):
+        return
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='briefs'"
+    ).fetchone()
+    ddl = (row[0] if row else "") or ""
+    if "artifact:%" in ddl:
+        return  # already widened
+
+    conn.executescript(
+        """
+        PRAGMA foreign_keys=OFF;
+        CREATE TABLE briefs_new (
+          brief_id TEXT PRIMARY KEY,
+          project_id TEXT REFERENCES projects(project_id),
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          brief_type TEXT CHECK(brief_type IN ('image','video','multishot')
+            OR brief_type LIKE 'artifact:%' OR brief_type IS NULL),
+          brief_json TEXT NOT NULL,
+          validated_at TIMESTAMP,
+          gate_result_json TEXT
+        );
+        INSERT INTO briefs_new (brief_id, project_id, created_at, brief_type,
+          brief_json, validated_at, gate_result_json)
+          SELECT brief_id, project_id, created_at, brief_type, brief_json,
+                 validated_at, gate_result_json FROM briefs;
+        DROP TABLE briefs;
+        ALTER TABLE briefs_new RENAME TO briefs;
+        CREATE INDEX IF NOT EXISTS idx_briefs_project ON briefs(project_id);
+        PRAGMA foreign_keys=ON;
+        """
+    )
+    conn.commit()
+
+
 def migrate_db(conn: sqlite3.Connection) -> None:
     """Idempotently add any columns missing from a pre-existing database."""
     for table, cols in _MIGRATIONS.items():
@@ -75,6 +117,7 @@ def migrate_db(conn: sqlite3.Connection) -> None:
             if name not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
     conn.commit()
+    _migrate_briefs_brief_type_check(conn)
 
 
 def init_db(db_path: Optional[str | Path] = None) -> list[str]:
