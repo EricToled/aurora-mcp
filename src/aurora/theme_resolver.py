@@ -46,7 +46,9 @@ def _contains(text: str, terms: tuple[str, ...]) -> bool:
 
 def _detect_mode(text: str) -> tuple[str, float]:
     is_multishot = _contains(text, _MULTISHOT_TERMS)
-    is_video = _contains(text, _VIDEO_TERMS) or bool(re.search(r"\b\d+\s*(s|seg|sec|segundos|seconds)\b", text))
+    is_video = _contains(text, _VIDEO_TERMS) or bool(
+        re.search(r"\b\d+\s*(s|seg|secs?|seconds?|segundos?)\b", text)
+    )
     is_image = _contains(text, _IMAGE_TERMS)
 
     if is_multishot and (is_video or not is_image):
