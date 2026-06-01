@@ -208,6 +208,16 @@ def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
 
         url, token = turso
         raw = libsql.connect(database=url, auth_token=token)
+        # AURORA's audit/event trail deliberately references not-yet-persisted
+        # parent rows, so it REQUIRES foreign-key enforcement OFF. Local sqlite3
+        # defaults to OFF (which is why this was never an issue locally), but
+        # libSQL enforces FKs by default and raised "FOREIGN KEY constraint
+        # failed" on Turso. Disable it explicitly here, before any statement runs
+        # (PRAGMA foreign_keys is a no-op once a transaction has begun).
+        try:
+            raw.execute("PRAGMA foreign_keys=OFF")
+        except Exception:  # pragma: no cover - never let this mask the connect
+            pass
         # libSQL's Connection rejects ``row_factory``; wrap it so the rest of
         # db.py sees sqlite3.Row-style rows. See _LibsqlConn above.
         return _LibsqlConn(raw)  # type: ignore[return-value]
