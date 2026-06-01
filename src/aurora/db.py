@@ -985,6 +985,81 @@ def resolve_security_events(
 
 
 # ---------------------------------------------------------------------------
+# Single-use ledger for rotating operator tokens (anti-invention, Fase 2)
+# ---------------------------------------------------------------------------
+def try_consume_token(
+    counter: int,
+    token: str,
+    purpose: str,
+    project_id: Optional[str] = None,
+    db_path: Optional[str | Path] = None,
+) -> bool:
+    """Atomically burn a (counter, token) pair so it unlocks exactly one action.
+
+    Returns True the FIRST time a token is presented for its window and False on
+    every replay. The (counter, token) primary key makes the burn race-free: a
+    second INSERT of the same pair raises IntegrityError, which we translate to
+    False. The caller has already proven the token is cryptographically valid via
+    totp.verify(); this is the single-use half of Eric's mandate (a code is dead
+    after one gate/bypass even inside its 60s window)."""
+    conn = get_conn(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO consumed_tokens (counter, token, purpose, project_id) "
+            "VALUES (?, ?, ?, ?)",
+            (counter, token, purpose, project_id),
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+
+def get_event_feed(
+    limit: int = 50,
+    db_path: Optional[str | Path] = None,
+) -> list[dict[str, Any]]:
+    """Recent security events for the Operator Console feed (newest first).
+
+    Unlike get_security_events this includes BOTH resolved and unresolved rows so
+    Eric sees the full timeline of AURORA blocks/halts — the "avisos de bloqueo"
+    he uses to question Claude. Each row is flattened to the fields the browser
+    renders; detail_json is parsed. No secret or token value is ever exposed."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT event_id, created_at, project_id, event_type, severity, "
+            "component, detail_json, resolved_at FROM security_events "
+            "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            detail = None
+            if d.get("detail_json"):
+                try:
+                    detail = json.loads(d["detail_json"])
+                except (ValueError, TypeError):
+                    detail = None
+            out.append({
+                "event_id": d["event_id"],
+                "created_at": d["created_at"],
+                "project_id": d["project_id"],
+                "event_type": d["event_type"],
+                "severity": d["severity"],
+                "component": d["component"],
+                "detail": detail,
+                "resolved": d["resolved_at"] is not None,
+            })
+        return out
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Per-step honesty attestation (anti-invention, content-level)
 # ---------------------------------------------------------------------------
 def insert_step_attestation(

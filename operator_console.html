@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AURORA · Operator Console</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131826; --panel2: #1b2233; --line: #2a3450;
+    --text: #e6ebf5; --dim: #8a96b0; --accent: #5b8cff; --good: #36d399;
+    --warn: #fbbd23; --bad: #f87272; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: 24px; max-width: 760px; margin: 0 auto;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .5px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 12px; color: var(--dim);
+    text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--dim); margin: 10px 0 4px; }
+  input[type=text] {
+    width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); font-family: var(--mono); font-size: 14px;
+  }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+    padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px;
+  }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button:active { transform: translateY(1px); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .token {
+    font-family: var(--mono); font-size: 46px; font-weight: 700; letter-spacing: 8px;
+    text-align: center; padding: 14px 0 6px; user-select: all;
+  }
+  .token.copyable { cursor: pointer; }
+  .countbar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; }
+  .countbar > span { display: block; height: 100%; background: var(--good);
+    transition: width .25s linear, background .25s; }
+  .meta { display: flex; justify-content: space-between; color: var(--dim);
+    font-size: 12px; margin-top: 8px; }
+  .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim); }
+  .pill.on { color: var(--good); border-color: var(--good); }
+  .pill.off { color: var(--warn); border-color: var(--warn); }
+  .secretbox { font-family: var(--mono); font-size: 14px; word-break: break-all;
+    background: var(--panel2); border: 1px dashed var(--warn); border-radius: 9px;
+    padding: 12px; margin-top: 8px; }
+  .warn { color: var(--warn); font-size: 12.5px; margin-top: 8px; }
+  .feed { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow:auto; }
+  .ev { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--panel2); }
+  .ev .t { font-size: 12px; color: var(--dim); }
+  .ev .ty { font-weight: 600; }
+  .ev.halt { border-left: 3px solid var(--bad); }
+  .ev.resolved { opacity: .55; }
+  .empty { color: var(--dim); font-size: 13px; padding: 8px 0; }
+  code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 5px; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+  <h1>AURORA · Operator Console</h1>
+  <div class="sub">Tokens rotativos de un solo uso para desbloquear / bypassear gates. El secreto vive solo en este navegador y en Render — Claude nunca lo ve.</div>
+
+  <!-- 1. SECRET SETUP -->
+  <div class="card">
+    <h2>1 · Secreto compartido</h2>
+    <div id="secretMissing">
+      <p style="margin:0 0 6px">Genera un secreto. Se mostrará <b>una sola vez</b>: cópialo y pégalo en Render como variable de entorno <code>AURORA_TOTP_SECRET</code>. Queda guardado en este navegador (localStorage), nunca se envía a Claude ni a ningún servidor desde aquí.</p>
+      <button id="genBtn">Generar secreto nuevo</button>
+      <div id="secretReveal" class="hide">
+        <label>Secreto (cópialo a Render → Environment → <code>AURORA_TOTP_SECRET</code>):</label>
+        <div class="secretbox" id="secretText"></div>
+        <div class="row">
+          <button id="copySecret" class="ghost">Copiar secreto</button>
+          <button id="confirmSecret">Ya lo pegué en Render →</button>
+        </div>
+        <div class="warn">⚠ No se volverá a mostrar. Si lo pierdes, genera otro y actualiza Render.</div>
+      </div>
+    </div>
+    <div id="secretReady" class="hide">
+      <div class="row" style="justify-content:space-between">
+        <span class="pill on">● Secreto cargado en este navegador</span>
+        <button id="forgetSecret" class="ghost">Olvidar / regenerar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. LIVE TOKEN -->
+  <div class="card" id="tokenCard">
+    <h2>2 · Token actual <span id="totpPill" class="pill">…</span></h2>
+    <div class="token copyable" id="tokenView" title="Click para copiar">--------</div>
+    <div class="countbar"><span id="countFill" style="width:100%"></span></div>
+    <div class="meta"><span id="countText">--s</span><span>Díctaselo a Claude. Vale 1 minuto y un solo uso.</span></div>
+  </div>
+
+  <!-- 3. BLOCK FEED -->
+  <div class="card">
+    <h2>3 · Avisos de bloqueo de AURORA</h2>
+    <div class="row" style="justify-content:space-between; margin-bottom:10px">
+      <input type="text" id="serverUrl" value="https://aurora-mcp-mjox.onrender.com" />
+    </div>
+    <div class="row" style="margin-top:0">
+      <button id="pollBtn" class="ghost">Conectar feed</button>
+      <span id="feedStatus" class="pill off">desconectado</span>
+    </div>
+    <div class="feed" id="feed" style="margin-top:12px"><div class="empty">Sin conexión.</div></div>
+  </div>
+
+<script>
+"use strict";
+// ====================================================================
+// TOTP — byte-identical to src/aurora/totp.py
+//   counter = floor(unix_seconds / 60), as 8-byte big-endian
+//   digest  = HMAC-SHA256(utf8(secret), counter_bytes)
+//   token   = RFC4648 base32(digest), no padding, first 8 chars, UPPER
+// ====================================================================
+const STEP = 60, TOKEN_LEN = 8, LS_KEY = "aurora_totp_secret";
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32(bytes) {
+  let bits = 0, value = 0, out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    value = (value << 8) | bytes[i]; bits += 8;
+    while (bits >= 5) { out += B32[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) out += B32[(value << (5 - bits)) & 31];
+  return out; // no padding, matches python .rstrip("=")
+}
+
+async function tokenForCounter(secret, counter) {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const buf = new ArrayBuffer(8);
+  new DataView(buf).setBigUint64(0, BigInt(counter), false); // big-endian
+  const sig = await crypto.subtle.sign("HMAC", key, buf);
+  return base32(new Uint8Array(sig)).slice(0, TOKEN_LEN).toUpperCase();
+}
+
+const nowCounter = () => Math.floor(Date.now() / 1000 / STEP);
+const currentToken = (secret) => tokenForCounter(secret, nowCounter());
+
+// ====================================================================
+// Secret management (localStorage; revealed once on generation)
+// ====================================================================
+const $ = (id) => document.getElementById(id);
+function getSecret() { return localStorage.getItem(LS_KEY) || ""; }
+
+function newSecret() {
+  const raw = new Uint8Array(20);
+  crypto.getRandomValues(raw);
+  return base32(raw); // 32 base32 chars, ~100 bits
+}
+
+function renderSecretState() {
+  const has = !!getSecret();
+  $("secretMissing").classList.toggle("hide", has);
+  $("secretReady").classList.toggle("hide", !has);
+}
+
+$("genBtn").onclick = () => {
+  const s = newSecret();
+  window._pendingSecret = s;
+  $("secretText").textContent = s;
+  $("secretReveal").classList.remove("hide");
+  $("genBtn").classList.add("hide");
+};
+$("copySecret").onclick = () => navigator.clipboard.writeText(window._pendingSecret || "");
+$("confirmSecret").onclick = () => {
+  if (window._pendingSecret) localStorage.setItem(LS_KEY, window._pendingSecret);
+  window._pendingSecret = null;
+  $("secretReveal").classList.add("hide");
+  $("genBtn").classList.remove("hide");
+  renderSecretState();
+};
+$("forgetSecret").onclick = () => {
+  if (confirm("¿Olvidar el secreto de este navegador? Tendrás que generar otro y actualizar Render.")) {
+    localStorage.removeItem(LS_KEY); renderSecretState();
+  }
+};
+
+// ====================================================================
+// Live token + countdown
+// ====================================================================
+$("tokenView").onclick = () => {
+  const t = $("tokenView").textContent;
+  if (t && t !== "--------") navigator.clipboard.writeText(t);
+};
+
+async function tick() {
+  const secret = getSecret();
+  const pill = $("totpPill");
+  if (!secret) {
+    $("tokenView").textContent = "--------";
+    $("countText").textContent = "sin secreto";
+    $("countFill").style.width = "0%";
+    pill.textContent = "sin secreto"; pill.className = "pill off";
+    return;
+  }
+  pill.textContent = "activo"; pill.className = "pill on";
+  $("tokenView").textContent = await currentToken(secret);
+  const secsLeft = STEP - Math.floor((Date.now() / 1000) % STEP);
+  const pct = (secsLeft / STEP) * 100;
+  $("countText").textContent = secsLeft + "s";
+  const fill = $("countFill");
+  fill.style.width = pct + "%";
+  fill.style.background = secsLeft <= 10 ? "var(--bad)" : secsLeft <= 25 ? "var(--warn)" : "var(--good)";
+}
+
+// ====================================================================
+// Block feed — polls /events with a CURRENT token (read-only, not consumed)
+// ====================================================================
+let polling = false, pollTimer = null;
+function base() { return $("serverUrl").value.replace(/\/+$/, ""); }
+
+function renderFeed(events) {
+  const box = $("feed");
+  if (!events || !events.length) { box.innerHTML = '<div class="empty">Sin avisos.</div>'; return; }
+  box.innerHTML = "";
+  for (const e of events) {
+    const div = document.createElement("div");
+    div.className = "ev" + (e.severity === "halt" ? " halt" : "") + (e.resolved ? " resolved" : "");
+    const detail = e.detail && e.detail.alarm ? e.detail.alarm : (e.component || "");
+    div.innerHTML = `<div class="t">${e.created_at || ""} · ${e.project_id || "global"}${e.resolved ? " · resuelto" : ""}</div>
+      <div class="ty">${e.event_type || ""}</div>
+      <div style="font-size:13px;color:var(--dim)">${detail}</div>`;
+    box.appendChild(div);
+  }
+}
+
+async function poll() {
+  const secret = getSecret();
+  const status = $("feedStatus");
+  try {
+    const headers = {};
+    if (secret) headers["X-Aurora-Token"] = await currentToken(secret);
+    const res = await fetch(base() + "/events?limit=50", { headers });
+    if (res.status === 401) { status.textContent = "token inválido"; status.className = "pill off"; return; }
+    if (!res.ok) { status.textContent = "error " + res.status; status.className = "pill off"; return; }
+    const data = await res.json();
+    renderFeed(data.events);
+    status.textContent = "conectado · " + (data.count || 0); status.className = "pill on";
+  } catch (err) {
+    status.textContent = "sin conexión"; status.className = "pill off";
+  }
+}
+
+$("pollBtn").onclick = () => {
+  polling = !polling;
+  $("pollBtn").textContent = polling ? "Desconectar feed" : "Conectar feed";
+  if (polling) { poll(); pollTimer = setInterval(poll, 5000); }
+  else { clearInterval(pollTimer); $("feedStatus").textContent = "desconectado"; $("feedStatus").className = "pill off"; }
+};
+
+// ====================================================================
+renderSecretState();
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

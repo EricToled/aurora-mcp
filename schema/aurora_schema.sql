@@ -123,6 +123,23 @@ CREATE TABLE IF NOT EXISTS security_events (
   resolved_at TIMESTAMP
 );
 
+-- Single-use ledger for rotating operator tokens (anti-invention, Fase 2).
+-- A TOTP token is valid for ~60s, but Eric's mandate is that it unlock EXACTLY
+-- ONE gate or bypass: the moment AURORA authorizes an action with token T for
+-- window C, it burns (C, T) here. A replay within the same 60s window — Claude
+-- trying to reuse the code Eric read aloud — finds the row already present and is
+-- refused. The (counter, token) pair is the primary key, so the burn is atomic
+-- under SQLite's INSERT-or-fail. Rows age out naturally (counter is monotonic);
+-- they are kept only long enough to outlive their own validity window.
+CREATE TABLE IF NOT EXISTS consumed_tokens (
+  counter INTEGER NOT NULL,
+  token TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  project_id TEXT,
+  consumed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (counter, token)
+);
+
 CREATE TABLE IF NOT EXISTS active_bypasses (
   component TEXT PRIMARY KEY,
   project_id TEXT,

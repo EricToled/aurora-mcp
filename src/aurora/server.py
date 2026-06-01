@@ -30,6 +30,7 @@ from . import (
     decision_sheet,
     execution_pack_builder,
     theme_resolver,
+    totp,
 )
 from .gates import (
     gate_anchors_audited,
@@ -69,6 +70,67 @@ _HTTP_HOST = os.environ.get("AURORA_HOST", "0.0.0.0")
 _HTTP_PORT = int(os.environ.get("PORT", os.environ.get("AURORA_PORT", "8000")))
 
 mcp = FastMCP("aurora", host=_HTTP_HOST, port=_HTTP_PORT)
+
+
+# ---------------------------------------------------------------------------
+# HTTP side-channel for the Operator Console artifact (anti-invention Fase 2)
+#
+# The Console (Eric's browser) needs to (a) confirm it can reach AURORA and (b)
+# read the "avisos de bloqueo" — the block/halt events Eric uses to question
+# Claude. Reading the feed is authenticated with a CURRENT rotating token in the
+# X-Aurora-Token header, but does NOT consume it: a read is not a gate unlock, so
+# it must never burn a single-use code. CORS is wide-open for GET because the feed
+# carries no secret/token material (db.get_event_feed strips it) and the artifact
+# may be served from anywhere (claude.ai, file://, etc).
+# ---------------------------------------------------------------------------
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse, Response  # noqa: E402
+
+_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "X-Aurora-Token, Content-Type",
+    "Access-Control-Max-Age": "600",
+}
+
+
+def _json(payload: dict[str, Any], status: int = 200) -> JSONResponse:
+    return JSONResponse(payload, status_code=status, headers=_CORS_HEADERS)
+
+
+@mcp.custom_route("/healthz", methods=["GET", "OPTIONS"])
+async def _healthz(request: Request) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_CORS_HEADERS)
+    # Reports WHICH auth regime is live so the Console can label itself, without
+    # ever revealing the secret (only whether one is configured).
+    return _json({
+        "ok": True,
+        "service": "aurora-mcp",
+        "rotating_tokens_enabled": totp.enabled(),
+        "step_seconds": totp.STEP,
+    })
+
+
+@mcp.custom_route("/events", methods=["GET", "OPTIONS"])
+async def _events(request: Request) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_CORS_HEADERS)
+    # Read auth: a live rotating token proves it's really Eric's console polling.
+    # Non-consuming — verify only, never burn. When no secret is configured the
+    # feed is open (legacy/dev parity with the static-token deployments).
+    if totp.enabled():
+        header = request.headers.get("X-Aurora-Token")
+        if totp.verify(header) is None:
+            return _json({"ok": False, "error": "invalid or missing X-Aurora-Token"},
+                         status=401)
+    try:
+        limit = max(1, min(200, int(request.query_params.get("limit", "50"))))
+    except (TypeError, ValueError):
+        limit = 50
+    _ensure_db()
+    feed = db.get_event_feed(limit=limit, db_path=_db())
+    return _json({"ok": True, "count": len(feed), "events": feed})
 
 # score_type -> scorer module (each exposes score(data) -> dict).
 _SCORERS = {
@@ -287,6 +349,60 @@ def _token_is_valid(operator_token: Optional[str]) -> bool:
     if not expected:
         return False
     return bool(operator_token) and operator_token.strip() == expected
+
+
+def _authorize(
+    operator_token: Optional[str],
+    *,
+    purpose: str,
+    project_id: Optional[str] = None,
+) -> bool:
+    """The single authorization decision behind every gate unlock / bypass.
+
+    Two regimes, selected by whether Eric configured a rotating secret on the
+    server:
+
+      * ROTATING (AURORA_TOTP_SECRET set) — Eric's Fase 2 mandate. The token must
+        be a currently-valid TOTP code AND unused: totp.verify proves it is live
+        (current or previous 60s window) and db.try_consume_token burns it so it
+        unlocks EXACTLY ONE action. Claude can only ever relay the one code Eric
+        reads aloud; a replay inside the window is refused. The secret lives only
+        in Eric's browser + Render env — Claude never sees it, so it cannot forge
+        a code.
+      * LEGACY (no secret) — the static AURORA_OPERATOR_TOKEN compare, so existing
+        deployments and the whole test-suite keep working unchanged.
+
+    ``purpose`` (e.g. "bypass", "decision_sheet_approval") is recorded with the
+    burn for the audit trail and lets the same physical token NOT cross-unlock a
+    different kind of action in a way we'd want to distinguish later. Has the side
+    effect of consuming the token in the rotating regime — call exactly once per
+    authorization decision."""
+    if not totp.enabled():
+        return _token_is_valid(operator_token)
+    counter = totp.verify(operator_token)
+    if counter is None:
+        return False
+    return db.try_consume_token(
+        counter, totp.normalize(operator_token), purpose, project_id, db_path=_db()
+    )
+
+
+def _auth_failure_reason(tool: str) -> str:
+    """Operator-facing explanation of WHY an authorization failed, tailored to the
+    active regime so Eric (and Claude relaying to Eric) knows what to send."""
+    if totp.enabled():
+        return (
+            f"{tool} requiere un token ROTATIVO válido de la Operator Console: un "
+            "código de un solo uso, válido ~60s. El que se envió ya expiró, ya se "
+            "usó, o no coincide. Eric: genera uno nuevo en la consola y dícteselo a "
+            "Claude para que lo reenvíe una sola vez. Claude no puede generarlo."
+        )
+    if _expected_operator_token() is None:
+        return (
+            "Ni AURORA_TOTP_SECRET ni AURORA_OPERATOR_TOKEN están configurados en el "
+            "servidor, así que NINGUNA autorización puede autenticarse (fail-closed)."
+        )
+    return f"{tool} llamado sin un operator_token estático válido."
 
 
 def _security_halt(
@@ -1396,16 +1512,11 @@ def aurora_approve_decision_sheet(
                 "aurora_create_decision_sheet."
             ),
         }
-    if not _token_is_valid(operator_token):
-        token_configured = _expected_operator_token() is not None
+    if not _authorize(operator_token, purpose="decision_sheet_approval",
+                      project_id=project_id):
         return _security_halt(
             alarm="🚨 Claude está intentando aprobar en nombre del operador",
-            violations=[
-                "aurora_approve_decision_sheet llamado sin un operator_token válido."
-                if token_configured
-                else "AURORA_OPERATOR_TOKEN no está configurado en el servidor, así "
-                "que NINGUNA aprobación puede autenticarse (fail-closed).",
-            ],
+            violations=[_auth_failure_reason("aurora_approve_decision_sheet")],
             project_id=project_id,
             component=gate_decision_sheet_approved.GATE_NAME,
             event_type="unauthorized_decision_sheet_approval",
@@ -1834,7 +1945,7 @@ def aurora_log_bypass(
     # when build_execution_pack evaluates gates by canonical name.
     component = bypass_handler.canonical_component(component)
 
-    authorized = _token_is_valid(operator_token)
+    authorized = _authorize(operator_token, purpose="bypass", project_id=project_id)
     directive = bypass_handler.BypassDirective(
         component=component,
         reason=reason,
@@ -1848,16 +1959,11 @@ def aurora_log_bypass(
     )
 
     if not authorized:
-        token_configured = _expected_operator_token() is not None
         violation = (
-            "Bypass attempted without a valid operator_token "
-            f"(component={component}, scope={scope})."
+            f"Bypass attempted without a valid operator token "
+            f"(component={component}, scope={scope}). "
+            + _auth_failure_reason("aurora_log_bypass")
         )
-        if not token_configured:
-            violation += (
-                " AURORA_OPERATOR_TOKEN is not configured on the server, so NO "
-                "bypass can be authorized (fail-closed)."
-            )
         return _security_halt(
             alarm="🚨 Claude está intentando bypasear el sistema",
             violations=[violation],
