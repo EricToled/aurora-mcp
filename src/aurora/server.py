@@ -84,7 +84,7 @@ mcp = FastMCP("aurora", host=_HTTP_HOST, port=_HTTP_PORT)
 # may be served from anywhere (claude.ai, file://, etc).
 # ---------------------------------------------------------------------------
 from starlette.requests import Request  # noqa: E402
-from starlette.responses import JSONResponse, Response  # noqa: E402
+from starlette.responses import HTMLResponse, JSONResponse, Response  # noqa: E402
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -131,6 +131,22 @@ async def _events(request: Request) -> Response:
     _ensure_db()
     feed = db.get_event_feed(limit=limit, db_path=_db())
     return _json({"ok": True, "count": len(feed), "events": feed})
+
+
+_CONSOLE_PATH = REPO_ROOT / "operator_console.html"
+
+
+@mcp.custom_route("/console", methods=["GET"])
+async def _console(request: Request) -> Response:
+    """Serve the Operator Console as a public page on AURORA's own host, so Eric
+    has a permanent URL (no separate hosting). The page generates the rotating
+    secret entirely client-side; this server only ships the static HTML and never
+    sees the secret."""
+    try:
+        html = _CONSOLE_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return HTMLResponse("<h1>operator_console.html not found</h1>", status_code=404)
+    return HTMLResponse(html)
 
 # score_type -> scorer module (each exposes score(data) -> dict).
 _SCORERS = {
