@@ -133,6 +133,171 @@ async def _events(request: Request) -> Response:
     return _json({"ok": True, "count": len(feed), "events": feed})
 
 
+def _events_token_ok(request: Request) -> bool:
+    """Shared read-auth for the console's GET feeds: a live rotating token in
+    X-Aurora-Token (non-consuming) when a secret is configured; open otherwise
+    (legacy/dev parity). Never burns a single-use code — a read is not an unlock."""
+    if not totp.enabled():
+        return True
+    return totp.verify(request.headers.get("X-Aurora-Token")) is not None
+
+
+# Artifact kinds Claude can submit, in pipeline order, with how to summarise each
+# for the "lo que Claude ha proporcionado" panel. Presence + a one-line summary —
+# never the full payload, so the status feed stays small and readable.
+_PROVIDED_KINDS: list[tuple[str, str]] = [
+    ("preproduction_packet", "Preproduction packet"),
+    ("prompt_packet", "Prompt packet"),
+    ("prompt_lint", "Lint de prompt"),
+    ("shot_list", "Shot list"),
+    ("motion_plan", "Motion plan"),
+    ("psp_components", "Componentes PSP"),
+    ("finishing", "Finishing"),
+]
+
+
+def _summarise_artifact(kind: str, data: Any) -> str:
+    """One-line human summary of a provided artifact (counts, not full content)."""
+    if not isinstance(data, dict):
+        return "presente"
+    if kind == "preproduction_packet":
+        chars = len(data.get("characters") or [])
+        shots = len(data.get("shot_list") or [])
+        return f"{chars} personaje(s), {shots} shot(s)"
+    if kind == "prompt_lint":
+        return f"{data.get('status', '?')} · {len(data.get('violations') or [])} violación(es)"
+    if kind == "prompt_packet":
+        wc = len((data.get("prompt_final") or "").split())
+        return f"modelo {data.get('model', '?')}, ~{wc} palabras"
+    if kind == "shot_list":
+        return "presente"
+    return "presente"
+
+
+def _project_status(project_id: str) -> Optional[dict[str, Any]]:
+    """Assemble the console status view for one project: gate verdicts (the real
+    'bloqueos'), what Claude provided, active bypasses, and security halts."""
+    project = db.get_project(project_id, db_path=_db())
+    if not project:
+        return None
+
+    evals = db.get_latest_gate_evaluations(project_id, db_path=_db())
+    gates = sorted(
+        (
+            {
+                "gate": name,
+                "status": e.get("status", ""),
+                "score": e.get("score"),
+                "reasons": e.get("reasons", []),
+                "evaluated_at": e.get("evaluated_at", ""),
+            }
+            for name, e in evals.items()
+        ),
+        # failures first, then warnings, then passes; newest within a status
+        key=lambda g: ({"fail": 0, "warning": 1, "pass": 2}.get(g["status"], 3),
+                       g["evaluated_at"]),
+    )
+    summary = {
+        "passed": sum(1 for g in gates if g["status"] == "pass"),
+        "failed": sum(1 for g in gates if g["status"] == "fail"),
+        "warning": sum(1 for g in gates if g["status"] == "warning"),
+        "total": len(gates),
+    }
+
+    provided = []
+    for kind, label in _PROVIDED_KINDS:
+        art = db.get_artifact(project_id, kind, db_path=_db())
+        provided.append({
+            "kind": kind,
+            "label": label,
+            "present": art is not None,
+            "detail": _summarise_artifact(kind, art) if art is not None else "",
+        })
+    # element / audit / score counts (separate tables, not artifacts)
+    provided.append({
+        "kind": "elements", "label": "Elementos auditados",
+        "present": bool(db.get_elements(project_id, db_path=_db())),
+        "detail": f"{len(db.get_elements(project_id, db_path=_db()))} elemento(s)",
+    })
+    audits = db.get_audits(project_id, db_path=_db())
+    provided.append({
+        "kind": "audits", "label": "Auditorías",
+        "present": bool(audits), "detail": f"{len(audits)} auditoría(s)",
+    })
+    scores = db.get_quality_scores(project_id, db_path=_db())
+    provided.append({
+        "kind": "quality_scores", "label": "Scores de calidad",
+        "present": bool(scores), "detail": f"{len(scores)} score(s)",
+    })
+
+    active = db.get_active_bypasses(db_path=_db())
+    bypasses = [{"component": c, "reason": r} for c, r in active.items()]
+
+    halts = [
+        {
+            "created_at": h.get("created_at", ""),
+            "event_type": h.get("event_type", ""),
+            "component": h.get("component", ""),
+            "severity": h.get("severity", ""),
+            "resolved": h.get("resolved_at") is not None,
+        }
+        for h in db.get_security_events(
+            project_id, unresolved_only=False, db_path=_db()
+        )
+    ]
+
+    return {
+        "project": {
+            "project_id": project["project_id"],
+            "operator_intent": project.get("operator_intent", ""),
+            "mode": project.get("mode", ""),
+            "status": project.get("status", ""),
+            "current_phase": project.get("current_phase", ""),
+            "created_at": project.get("created_at", ""),
+        },
+        "summary": summary,
+        "gates": gates,
+        "provided": provided,
+        "bypasses": bypasses,
+        "halts": halts,
+    }
+
+
+@mcp.custom_route("/projects", methods=["GET", "OPTIONS"])
+async def _projects(request: Request) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_CORS_HEADERS)
+    if not _events_token_ok(request):
+        return _json({"ok": False, "error": "invalid or missing X-Aurora-Token"},
+                     status=401)
+    try:
+        limit = max(1, min(100, int(request.query_params.get("limit", "25"))))
+    except (TypeError, ValueError):
+        limit = 25
+    _ensure_db()
+    rows = db.list_projects(limit=limit, db_path=_db())
+    return _json({"ok": True, "count": len(rows), "projects": rows})
+
+
+@mcp.custom_route("/status", methods=["GET", "OPTIONS"])
+async def _status(request: Request) -> Response:
+    if request.method == "OPTIONS":
+        return Response(status_code=204, headers=_CORS_HEADERS)
+    if not _events_token_ok(request):
+        return _json({"ok": False, "error": "invalid or missing X-Aurora-Token"},
+                     status=401)
+    project_id = (request.query_params.get("project_id") or "").strip()
+    if not project_id:
+        return _json({"ok": False, "error": "project_id query param required"},
+                     status=400)
+    _ensure_db()
+    status = _project_status(project_id)
+    if status is None:
+        return _json({"ok": False, "error": f"unknown project: {project_id}"},
+                     status=404)
+    return _json({"ok": True, **status})
+
+
 _CONSOLE_PATH = REPO_ROOT / "operator_console.html"
 
 

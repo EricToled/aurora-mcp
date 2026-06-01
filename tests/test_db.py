@@ -38,6 +38,21 @@ def test_init_db_creates_v21_schema(tmp_path):
     assert len(tables) == 21
 
 
+def test_list_projects_newest_first(tmp_path):
+    # The Operator Console status picker lists recent projects, newest first,
+    # with the lightweight columns it needs to populate the dropdown.
+    db_path = str(tmp_path / "proj.db")
+    db.init_db(db_path)
+    p1 = db.insert_project("primero", "image", db_path=db_path)
+    p2 = db.insert_project("segundo", "video_simple", db_path=db_path)
+    rows = db.list_projects(db_path=db_path)
+    assert [r["project_id"] for r in rows][:2] == [p2, p1]  # newest first
+    assert rows[0]["operator_intent"] == "segundo"
+    assert {"project_id", "operator_intent", "mode", "status",
+            "current_phase", "created_at"} <= set(rows[0].keys())
+    assert len(db.list_projects(limit=1, db_path=db_path)) == 1
+
+
 def test_put_artifact_roundtrip(tmp_path):
     # Regression: artifact rows (brief_type="artifact:<kind>") must be allowed
     # by the briefs CHECK so validate_biomechanics/check_multishot can persist.

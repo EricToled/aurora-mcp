@@ -181,6 +181,26 @@ def get_project(
         conn.close()
 
 
+def list_projects(
+    limit: int = 25, db_path: Optional[str | Path] = None
+) -> list[dict[str, Any]]:
+    """Recent projects (newest first) for the Operator Console status picker.
+
+    Returns only the lightweight columns the console needs to populate its
+    dropdown — full per-project state is fetched on demand via get_project +
+    get_latest_gate_evaluations. No secret or token material is involved."""
+    conn = get_conn(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT project_id, operator_intent, mode, status, current_phase, "
+            "created_at FROM projects ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 _PROJECT_UPDATABLE = {
     "status",
     "output_type",
