@@ -72,6 +72,125 @@ def _turso_config() -> Optional[tuple[str, str]]:
     return None
 
 
+# ---------------------------------------------------------------------------
+# libSQL (Turso) adapter
+#
+# libSQL's Connection is a compiled Rust object: it has no ``__dict__`` and so
+# rejects ``conn.row_factory = sqlite3.Row`` (raises AttributeError on boot).
+# It also returns plain tuples, while the rest of db.py relies on sqlite3.Row
+# semantics — ``row["col"]``, ``row[0]`` and ``dict(row)``. These thin wrappers
+# restore that behaviour over the raw libSQL connection without touching any of
+# the call sites below. Only used on the Turso path; the local sqlite3 file path
+# (tests, CLI, dev) is untouched.
+# ---------------------------------------------------------------------------
+class _LibsqlRow:
+    """sqlite3.Row-compatible view: access by column name OR integer index,
+    iterable over values, and ``dict(row)``-able via ``keys()`` + ``__getitem__``.
+    """
+
+    __slots__ = ("_values", "_cols")
+
+    def __init__(self, values: tuple, cols: dict[str, int]) -> None:
+        self._values = tuple(values)
+        self._cols = cols  # column-name -> index (shared across a result set)
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, str):
+            return self._values[self._cols[key]]
+        return self._values[key]
+
+    def keys(self) -> list[str]:
+        return list(self._cols.keys())
+
+    def __iter__(self):
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug aid only
+        return f"_LibsqlRow({dict(zip(self._cols, self._values))!r})"
+
+
+class _LibsqlCursor:
+    """Wraps a raw libSQL cursor so fetched rows become ``_LibsqlRow``."""
+
+    def __init__(self, raw_cur: Any) -> None:
+        self._cur = raw_cur
+
+    def _cols(self) -> dict[str, int]:
+        desc = self._cur.description
+        if not desc:
+            return {}
+        return {d[0]: i for i, d in enumerate(desc)}
+
+    def execute(self, sql: str, params: Any = ()) -> "_LibsqlCursor":
+        self._cur.execute(sql, params)
+        return self
+
+    def fetchone(self) -> Optional[_LibsqlRow]:
+        row = self._cur.fetchone()
+        if row is None:
+            return None
+        return _LibsqlRow(row, self._cols())
+
+    def fetchall(self) -> list[_LibsqlRow]:
+        cols = self._cols()
+        return [_LibsqlRow(r, cols) for r in self._cur.fetchall()]
+
+    def __iter__(self):
+        cols = self._cols()
+        for r in self._cur.fetchall():
+            yield _LibsqlRow(r, cols)
+
+    @property
+    def description(self):
+        return self._cur.description
+
+    @property
+    def lastrowid(self):
+        return getattr(self._cur, "lastrowid", None)
+
+    def close(self) -> None:
+        try:
+            self._cur.close()
+        except Exception:
+            pass
+
+
+class _LibsqlConn:
+    """sqlite3.Connection-compatible facade over a raw libSQL connection.
+
+    Implements only the surface db.py actually uses: ``execute`` (returning a
+    cursor whose rows behave like sqlite3.Row), ``executescript``, ``cursor``,
+    ``commit``, ``rollback`` and ``close``.
+    """
+
+    def __init__(self, raw: Any) -> None:
+        self._raw = raw
+
+    def execute(self, sql: str, params: Any = ()) -> _LibsqlCursor:
+        raw_cur = self._raw.execute(sql, params)
+        return _LibsqlCursor(raw_cur)
+
+    def executescript(self, script: str) -> None:
+        self._raw.executescript(script)
+
+    def cursor(self) -> _LibsqlCursor:
+        return _LibsqlCursor(self._raw.cursor())
+
+    def commit(self) -> None:
+        self._raw.commit()
+
+    def rollback(self) -> None:
+        rb = getattr(self._raw, "rollback", None)
+        if callable(rb):
+            rb()
+
+    def close(self) -> None:
+        self._raw.close()
+
+
 def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
     """Open a connection with row access by name. Foreign keys stay OFF so the
     audit trail can carry informational references to not-yet-persisted rows.
@@ -88,9 +207,10 @@ def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
         import libsql_experimental as libsql  # type: ignore
 
         url, token = turso
-        conn = libsql.connect(database=url, auth_token=token)
-        conn.row_factory = sqlite3.Row
-        return conn
+        raw = libsql.connect(database=url, auth_token=token)
+        # libSQL's Connection rejects ``row_factory``; wrap it so the rest of
+        # db.py sees sqlite3.Row-style rows. See _LibsqlConn above.
+        return _LibsqlConn(raw)  # type: ignore[return-value]
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
     # Ensure the parent dir exists so a custom file path works on first boot
     # before the file exists.
