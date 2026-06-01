@@ -48,3 +48,32 @@ def test_status_surfaces_gate_blocks_and_provided(monkeypatch, tmp_path):
     # An un-submitted artifact reads as absent.
     prompt_row = next(p for p in st["provided"] if p["kind"] == "prompt_packet")
     assert prompt_row["present"] is False
+
+
+def test_emit_block_notifies_feed_without_halting(monkeypatch, tmp_path):
+    """Eric's mandate: the console must be notified of EVERY emit refusal, not
+    just SECURITY_HALT alarms — and those notifications must NOT themselves turn
+    into a permanent halt that blocks future emits."""
+    _setup(monkeypatch, tmp_path)
+    db_path = srv._db()
+    pid = db.insert_project("spot hero", "image", db_path=db_path,
+                            output_type="image_genesis")
+
+    # A bare content-mode project blocks on the shape gates.
+    res = srv.aurora_emit_execution_pack(pid)
+    assert res["ok"] is False
+
+    feed = db.get_event_feed(limit=50, db_path=db_path)
+    blocks = [e for e in feed if e["event_type"] == "emit_blocked"]
+    assert blocks, "every emit block must leave a feed notification"
+    assert blocks[0]["severity"] == "block"
+    assert blocks[0]["resolved"] is False  # shown as an active block, not 'resuelto'
+
+    # The 'block' event is informational: a second emit must still reach the gate
+    # logic (its own block), NOT be hijacked into a SECURITY_HALT by the feed row.
+    res2 = srv.aurora_emit_execution_pack(pid)
+    assert res2.get("status") != "SECURITY_HALT"
+
+    # And a 'block' event never appears in the status card's HALTS section.
+    st = srv._project_status(pid)
+    assert st["halts"] == []

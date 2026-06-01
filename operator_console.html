@@ -59,6 +59,7 @@
   .ev .t { font-size: 12px; color: var(--dim); }
   .ev .ty { font-weight: 600; }
   .ev.halt { border-left: 3px solid var(--bad); }
+  .ev.block { border-left: 3px solid var(--warn); }
   .ev.resolved { opacity: .55; }
   .empty { color: var(--dim); font-size: 13px; padding: 8px 0; }
   code { font-family: var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 5px; }
@@ -273,7 +274,7 @@ function renderFeed(events) {
   box.innerHTML = "";
   for (const e of events) {
     const div = document.createElement("div");
-    div.className = "ev" + (e.severity === "halt" ? " halt" : "") + (e.resolved ? " resolved" : "");
+    div.className = "ev" + (e.severity === "halt" ? " halt" : e.severity === "block" ? " block" : "") + (e.resolved ? " resolved" : "");
     const detail = e.detail && e.detail.alarm ? e.detail.alarm : (e.component || "");
     div.innerHTML = `<div class="t">${e.created_at || ""} · ${e.project_id || "global"}${e.resolved ? " · resuelto" : ""}</div>
       <div class="ty">${e.event_type || ""}</div>

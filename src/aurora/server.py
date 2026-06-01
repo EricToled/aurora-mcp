@@ -245,6 +245,9 @@ def _project_status(project_id: str) -> Optional[dict[str, Any]]:
         for h in db.get_security_events(
             project_id, unresolved_only=False, db_path=_db()
         )
+        # Only true HALT alarms belong in the status card's "Halts" section;
+        # informational 'block' feed notifications are shown in the event feed.
+        if h.get("severity") == "halt"
     ]
 
     return {
@@ -2020,20 +2023,13 @@ def aurora_attest_step(
 # ===========================================================================
 # 7. Execution Pack emission
 # ===========================================================================
-@mcp.tool()
-def aurora_emit_execution_pack(
+def _emit_execution_pack_impl(
     project_id: str,
     elements_with_urls: Optional[dict[str, str]] = None,
     bypass_ids: Optional[list[str]] = None,
 ) -> dict[str, Any]:
-    """Emit the Execution Pack (Sección 10/13). BLOCKS unless every required
-    gate for the mode passes or has a registered active bypass.
-
-    Gate verdicts recorded by the validate_*/check_* tools are read from
-    gate_evaluations (persist-then-read); gates with no recorded verdict are
-    evaluated from assembled context. ``bypass_ids`` explicitly applies bypasses
-    logged via aurora_log_bypass (any scope, including current_turn), so an
-    operator override is honored at emit time (bug #9)."""
+    """Core emit logic. Wrapped by aurora_emit_execution_pack so every BLOCK is
+    mirrored into the Operator Console event feed (see _record_emit_block)."""
     _ensure_db()
     project = db.get_project(project_id, db_path=_db())
     if not project:
@@ -2041,8 +2037,14 @@ def aurora_emit_execution_pack(
 
     # ANTI-INVENTION: an unresolved security event (e.g. an unauthorized bypass
     # attempt) hard-blocks emission. The alarm persists until the operator
-    # resolves it, so Claude cannot proceed by skipping a gate.
-    alarms = db.get_security_events(project_id, unresolved_only=True, db_path=_db())
+    # resolves it, so Claude cannot proceed by skipping a gate. Only true HALT
+    # alarms gate emit; informational 'block' events (the feed notifications
+    # recorded for every refusal, severity='block') never stop a future emit.
+    alarms = [
+        a for a in db.get_security_events(
+            project_id, unresolved_only=True, db_path=_db())
+        if a.get("severity") == "halt"
+    ]
     if alarms:
         return _security_halt(
             alarm="🚨 Claude está intentando bypasear el sistema",
@@ -2242,6 +2244,82 @@ def aurora_emit_execution_pack(
         )
         result["pack_id"] = pack_id
         db.update_project(project_id, db_path=_db(), current_phase="execution_pack_emitted")
+    return result
+
+
+# Status -> human label for the feed notification of a non-HALT emit block.
+_EMIT_BLOCK_LABELS = {
+    "PROMPT_LINT_FAILED": "Lint de prompt falló",
+    "GENESIS_DEVIATION_BLOCKED": "Desviación de modelo genesis sin autorizar",
+    "ATTESTATION_REQUIRED": "Faltan atestaciones de honestidad",
+    "DECISION_SHEET_NOT_APPROVED": "Decision Sheet sin aprobar",
+    "EXECUTION_PACK_BLOCKED": "Gates de shape bloqueados",
+}
+
+
+def _record_emit_block(project_id: Optional[str], result: Any) -> None:
+    """Mirror an emit BLOCK into the security_events feed (severity='block') so the
+    Operator Console notifies the operator of EVERY refusal, not just SECURITY_HALT
+    alarms. These rows are informational: 'block' severity is excluded from the
+    emit halt-gate, so they never themselves stop a future emit. SECURITY_HALT
+    results already recorded their own halt-severity alarm, and plain usage errors
+    (unknown project) are not blocks — both are skipped."""
+    if not project_id or not isinstance(result, dict) or result.get("ok"):
+        return
+    status = result.get("status")
+    if status == "SECURITY_HALT":
+        return  # _security_halt already recorded a halt-severity alarm
+    reason = result.get("reason") or ""
+    if not status and reason.startswith("unknown project"):
+        return  # caller error, not a gate block
+    # The SHAPE-gate fail from the builder carries no status but is a real block.
+    status = status or "EXECUTION_PACK_BLOCKED"
+    blocking = (
+        [g.get("name") for g in
+         ((result.get("gate_evaluation") or {}).get("blocking_gates") or [])]
+        or result.get("violations")
+        or result.get("genesis_problems")
+        or result.get("missing_attestations")
+        or []
+    )
+    try:
+        db.insert_security_event(
+            event_type="emit_blocked",
+            project_id=project_id,
+            component=status,
+            severity="block",
+            detail={
+                "alarm": _EMIT_BLOCK_LABELS.get(status, status),
+                "status": status,
+                "reason": reason,
+                "blocking_gates": blocking,
+            },
+            db_path=_db(),
+        )
+    except Exception:  # pragma: no cover - never let feed logging mask the block
+        pass
+
+
+@mcp.tool()
+def aurora_emit_execution_pack(
+    project_id: str,
+    elements_with_urls: Optional[dict[str, str]] = None,
+    bypass_ids: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Emit the Execution Pack (Sección 10/13). BLOCKS unless every required
+    gate for the mode passes or has a registered active bypass.
+
+    Gate verdicts recorded by the validate_*/check_* tools are read from
+    gate_evaluations (persist-then-read); gates with no recorded verdict are
+    evaluated from assembled context. ``bypass_ids`` explicitly applies bypasses
+    logged via aurora_log_bypass (any scope, including current_turn), so an
+    operator override is honored at emit time (bug #9).
+
+    Every BLOCK (prompt lint, genesis deviation, missing attestation, unapproved
+    Decision Sheet, shape gates, security halt) is mirrored into the Operator
+    Console event feed so the operator is notified of each refusal in real time."""
+    result = _emit_execution_pack_impl(project_id, elements_with_urls, bypass_ids)
+    _record_emit_block(project_id, result)
     return result
 
 
