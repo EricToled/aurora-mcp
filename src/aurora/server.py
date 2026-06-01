@@ -1719,7 +1719,33 @@ def aurora_check_multishot_strategy(
     shot_list: list[dict[str, Any]],
     anchor_strategy: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Check multishot anchor strategy (Sección 7.1 / 6.5)."""
+    """Check multishot anchor strategy (Sección 7.1 / 6.5).
+
+    Each item of ``shot_list`` is a shot dict. The shot is identified by
+    ``shot_number`` (canonical; ``shot_id`` is accepted as a fallback for the
+    error label only). Every shot MUST carry an ``anchor_strategy`` object:
+
+        {
+          "shot_number": 1,
+          "anchor_strategy": {
+            "case_type": "simple_start",
+            "ff_higgsfield_element_id": "elem_abc123"
+          }
+        }
+
+    ``case_type`` must be one of these 7 values (NOT the prompt-linter case
+    codes "1/2/3a/3b/3c/4" — those belong to a different gate):
+        simple_start, start_and_end, open_end, multishot_per_shot,
+        continuity_from_previous, dialogue_long, complex_scene
+
+    Except for ``simple_start``, each anchor_strategy must set at least one
+    anchor/continuity reference from:
+        ff_higgsfield_element_id, lf_higgsfield_element_id,
+        character_higgsfield_element_id, prop_higgsfield_element_id,
+        product_higgsfield_element_id, location_higgsfield_element_id,
+        previous_clip_ref, previous_clip_last_seconds_ref,
+        intermediate_screenshot_ref
+    """
     _ensure_db()
     db.put_artifact(project_id, "shot_list", shot_list or [], db_path=_db())
     result = gate_multishot_anchor_strategy.check(shot_list)

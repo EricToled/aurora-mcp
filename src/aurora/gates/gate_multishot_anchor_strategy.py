@@ -40,20 +40,28 @@ def check(shot_list: list[dict[str, Any]] | None) -> GateResult:
             passed=False,
             reasons=["empty shot list"],
         )
+    valid = ", ".join(sorted(VALID_CASE_TYPES))
     for shot in shot_list:
-        num = shot.get("shot_number", "?")
+        # Canonical key is shot_number; fall back to shot_id so a mislabelled
+        # shot is still identifiable in the message instead of "shot ?".
+        num = shot.get("shot_number", shot.get("shot_id", "?"))
         strat = shot.get("anchor_strategy")
         if not isinstance(strat, dict) or not strat:
             reasons.append(f"shot {num}: no anchor_strategy")
             continue
         case_type = strat.get("case_type")
         if case_type not in VALID_CASE_TYPES:
-            reasons.append(f"shot {num}: invalid case_type {case_type!r}")
+            reasons.append(
+                f"shot {num}: invalid case_type {case_type!r} — válidos: {valid}"
+            )
         has_anchor = any(strat.get(f) for f in _ANCHOR_FIELDS)
         # A simple_start opening shot may legitimately have only an FF anchor;
         # all others need at least one anchor/continuity reference.
         if not has_anchor and case_type != "simple_start":
-            reasons.append(f"shot {num}: anchor_strategy has no anchor reference")
+            reasons.append(
+                f"shot {num}: anchor_strategy has no anchor reference — "
+                f"set one of: {', '.join(_ANCHOR_FIELDS)}"
+            )
     passed = len(reasons) == 0
     return GateResult(
         gate="gate_multishot_anchor_strategy",
