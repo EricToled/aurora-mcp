@@ -54,6 +54,11 @@ def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
     """Open a connection with row access by name. Foreign keys stay OFF so the
     audit trail can carry informational references to not-yet-persisted rows."""
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
+    # Ensure the parent dir exists so a persistent-disk mount path (e.g.
+    # /data/aurora.db on Render) works even on first boot before the file exists.
+    parent = path.parent
+    if parent and not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     return conn

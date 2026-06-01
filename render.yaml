@@ -8,17 +8,26 @@
 # Deploy: push this repo to GitHub, then in Render -> New -> Blueprint, pick
 # the repo. Render reads this file and builds the Dockerfile automatically.
 # After deploy, your MCP URL is:  https://<service-name>.onrender.com/mcp
+#
+# STATE PERSISTENCE: a persistent disk is mounted at /data and the SQLite DB
+# lives at /data/aurora.db, so projects / decision sheets / dossiers / bypass
+# history SURVIVE redeploys and cold-starts. Persistent disks require a paid
+# instance, so the plan is "starter" (not free). NOTE: a service with a disk
+# runs as a single instance and uses recreate (brief downtime) deploys — fine
+# for AURORA.
 services:
   - type: web
     name: aurora-mcp
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
+    disk:
+      name: aurora-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: AURORA_HTTP
         value: "1"
-      # Free tier has no persistent disk: keep the SQLite DB in the app dir.
-      # It is ephemeral (resets on redeploy/sleep). The gates stay
-      # deterministic; only bypass/brief history is not retained.
+      # Persistent: lives on the mounted disk, retained across redeploys/sleep.
       - key: AURORA_DB_PATH
-        value: /app/aurora.db
+        value: /data/aurora.db
