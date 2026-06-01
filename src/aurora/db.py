@@ -50,12 +50,50 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _turso_config() -> Optional[tuple[str, str]]:
+    """Return (database_url, auth_token) when Turso/libSQL is configured.
+
+    Persistence on a free Render instance: the local filesystem is wiped on every
+    redeploy/cold-start, so the canonical store lives in Turso (a hosted,
+    SQLite-compatible libSQL database). Set both env vars to activate it:
+
+        AURORA_TURSO_DATABASE_URL = libsql://<your-db>.turso.io
+        AURORA_TURSO_AUTH_TOKEN   = <token from `turso db tokens create`>
+
+    With neither set, AURORA falls back to a local SQLite file (dev/tests and the
+    current ephemeral behaviour) — so this is a safe, opt-in switch.
+    """
+    import os
+
+    url = (os.environ.get("AURORA_TURSO_DATABASE_URL") or "").strip()
+    token = (os.environ.get("AURORA_TURSO_AUTH_TOKEN") or "").strip()
+    if url and token:
+        return url, token
+    return None
+
+
 def get_conn(db_path: Optional[str | Path] = None) -> sqlite3.Connection:
     """Open a connection with row access by name. Foreign keys stay OFF so the
-    audit trail can carry informational references to not-yet-persisted rows."""
+    audit trail can carry informational references to not-yet-persisted rows.
+
+    When Turso/libSQL is configured (see :func:`_turso_config`) AND no explicit
+    ``db_path`` was requested, connect to the hosted libSQL database so state
+    survives Render redeploys/cold-starts. An explicit ``db_path`` (tests, CLI)
+    always uses a local SQLite file, keeping the test suite hermetic.
+    """
+    turso = _turso_config() if db_path is None else None
+    if turso is not None:
+        # Lazy import: only required when Turso is actually in use, so a missing
+        # client never breaks the default local/file path or the test suite.
+        import libsql_experimental as libsql  # type: ignore
+
+        url, token = turso
+        conn = libsql.connect(database=url, auth_token=token)
+        conn.row_factory = sqlite3.Row
+        return conn
     path = Path(db_path) if db_path is not None else DEFAULT_DB_PATH
-    # Ensure the parent dir exists so a persistent-disk mount path (e.g.
-    # /data/aurora.db on Render) works even on first boot before the file exists.
+    # Ensure the parent dir exists so a custom file path works on first boot
+    # before the file exists.
     parent = path.parent
     if parent and not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)

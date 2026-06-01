@@ -9,25 +9,29 @@
 # the repo. Render reads this file and builds the Dockerfile automatically.
 # After deploy, your MCP URL is:  https://<service-name>.onrender.com/mcp
 #
-# STATE PERSISTENCE: a persistent disk is mounted at /data and the SQLite DB
-# lives at /data/aurora.db, so projects / decision sheets / dossiers / bypass
-# history SURVIVE redeploys and cold-starts. Persistent disks require a paid
-# instance, so the plan is "starter" (not free). NOTE: a service with a disk
-# runs as a single instance and uses recreate (brief downtime) deploys — fine
-# for AURORA.
+# STATE PERSISTENCE (free tier): Render's free filesystem is ephemeral, so the
+# canonical store lives in TURSO (a hosted, SQLite-compatible libSQL database,
+# free tier). Set these two secrets in the Render dashboard (Environment) and
+# AURORA persists projects / decision sheets / dossiers / bypass history across
+# redeploys and cold-starts. With them unset, AURORA falls back to a local
+# (ephemeral) SQLite file — same as before.
+#
+#   AURORA_TURSO_DATABASE_URL = libsql://<your-db>.turso.io
+#   AURORA_TURSO_AUTH_TOKEN   = <turso db tokens create ...>
 services:
   - type: web
     name: aurora-mcp
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
-    disk:
-      name: aurora-data
-      mountPath: /data
-      sizeGB: 1
+    plan: free
     envVars:
       - key: AURORA_HTTP
         value: "1"
-      # Persistent: lives on the mounted disk, retained across redeploys/sleep.
+      # Hosted libSQL (Turso) — set in the dashboard, not stored in the blueprint.
+      - key: AURORA_TURSO_DATABASE_URL
+        sync: false
+      - key: AURORA_TURSO_AUTH_TOKEN
+        sync: false
+      # Local fallback path used only when Turso is NOT configured (ephemeral).
       - key: AURORA_DB_PATH
-        value: /data/aurora.db
+        value: /app/aurora.db

@@ -508,10 +508,15 @@ def _emit_push_alert(title: str, message: str, project_id: Optional[str] = None)
 def _ensure_db() -> None:
     # Idempotent: schema uses CREATE TABLE IF NOT EXISTS, so this both
     # creates a fresh DB and adds any new tables to an already-deployed one.
-    db.init_db(DB_PATH)
+    db.init_db(_db())
 
 
-def _db() -> str:
+def _db() -> Optional[str]:
+    # When Turso/libSQL is configured, hand db.get_conn None so it connects to the
+    # hosted libSQL store (state survives Render redeploys). Otherwise use the
+    # local SQLite file at DB_PATH (dev/tests + the legacy ephemeral path).
+    if db._turso_config() is not None:
+        return None
     return str(DB_PATH)
 
 

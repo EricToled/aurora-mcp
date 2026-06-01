@@ -4,3 +4,6 @@ pyyaml
 httpx
 jinja2
 pytest
+# Hosted SQLite-compatible store (Turso). Only used when AURORA_TURSO_* env vars
+# are set; otherwise AURORA runs on the stdlib sqlite3 local file.
+libsql-experimental
