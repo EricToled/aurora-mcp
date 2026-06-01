@@ -98,6 +98,9 @@
     <h2>2 · Token actual <span id="totpPill" class="pill">…</span></h2>
     <div class="token copyable" id="tokenView" title="Click para copiar">--------</div>
     <div class="countbar"><span id="countFill" style="width:100%"></span></div>
+    <div class="row" style="justify-content:center; margin-top:6px">
+      <button id="copyToken">Copiar token</button>
+    </div>
     <div class="meta"><span id="countText">--s</span><span>Díctaselo a Claude. Vale 1 minuto y un solo uso.</span></div>
   </div>
 
@@ -190,10 +193,17 @@ $("forgetSecret").onclick = () => {
 // ====================================================================
 // Live token + countdown
 // ====================================================================
-$("tokenView").onclick = () => {
+async function copyCurrentToken() {
   const t = $("tokenView").textContent;
-  if (t && t !== "--------") navigator.clipboard.writeText(t);
-};
+  if (!t || t === "--------") return;
+  try { await navigator.clipboard.writeText(t); } catch (_) {}
+  const btn = $("copyToken");
+  btn.textContent = "✓ Copiado: " + t;
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => { btn.textContent = "Copiar token"; }, 2000);
+}
+$("tokenView").onclick = copyCurrentToken;
+$("copyToken").onclick = copyCurrentToken;
 
 async function tick() {
   const secret = getSecret();
