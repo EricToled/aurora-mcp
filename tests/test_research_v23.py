@@ -60,6 +60,12 @@ def _dossier(model_id: str, output_type: str) -> dict:
         },
         "params_schema": [{"name": "duration", "type": "int", "default": 5}],
         "known_gotchas": ["avoid 2.35:1"],
+        # Génesis/Anchor images require researched creative direction; harmless for video.
+        "creative_direction": {
+            "lighting": "soft key + rim, 5600K daylight",
+            "style": "cinematic editorial",
+            "camera": "85mm portrait lens, eye-level",
+        },
     }
 
 
@@ -327,6 +333,67 @@ def test_gate_blocks_image_mode_without_research(server_db):
     emit = srv.aurora_emit_execution_pack(pid)
     blocking = [g["name"] for g in emit["gate_evaluation"]["blocking_gates"]]
     assert "gate_platform_syntax_researched" in blocking
+
+
+def test_image_research_brief_demands_creative_direction(server_db):
+    # The brief for an image must tell the researcher to verify lighting/style/camera.
+    pid = srv.aurora_create_project("x", "image", "image_genesis")["project_id"]
+    out = srv.aurora_request_platform_research(
+        project_id=pid, model_id="soul_cinematic", output_type="image_genesis",
+        shot_context={"shot_type": "product hero"})
+    cd = out["research_brief"]["creative_direction_research_required"]
+    assert set(cd["must_research"]) == {"lighting", "style", "camera"}
+    assert "creative_direction" in cd["expected_dossier_field"]
+
+
+def test_record_image_rejects_missing_creative_direction(server_db):
+    pid = srv.aurora_create_project("x", "image", "image_genesis")["project_id"]
+    dossier = _dossier("soul_cinematic", "image_genesis")
+    dossier.pop("creative_direction")
+    out = srv.aurora_record_platform_research(
+        project_id=pid, model_id="soul_cinematic", output_type="image_genesis",
+        syntax_dossier=dossier, sources=_sources(3))
+    assert out["ok"] is False
+    assert "creative_direction" in out["error"]
+
+
+def test_record_image_rejects_empty_creative_direction_field(server_db):
+    pid = srv.aurora_create_project("x", "image", "image_anchor")["project_id"]
+    dossier = _dossier("soul_cast", "image_anchor")
+    dossier["creative_direction"]["camera"] = ""  # one empty field is enough to block
+    out = srv.aurora_record_platform_research(
+        project_id=pid, model_id="soul_cast", output_type="image_anchor",
+        syntax_dossier=dossier, sources=_sources(3))
+    assert out["ok"] is False
+    assert "camera" in out["error"]
+
+
+def test_record_video_does_not_require_creative_direction(server_db):
+    pid = srv.aurora_create_project("x", "video_simple", "perf")["project_id"]
+    dossier = _dossier("veo", "video_simple")
+    dossier.pop("creative_direction")  # video is unaffected by the image rule
+    out = srv.aurora_record_platform_research(
+        project_id=pid, model_id="veo", output_type="video_simple",
+        syntax_dossier=dossier, sources=_sources(3))
+    assert out["ok"] is True
+
+
+def test_build_prompt_image_blocks_without_creative_direction(server_db):
+    # A dossier inserted straight into the cache without creative_direction must
+    # still block image prompt construction (defence in depth, not just at record).
+    pid = srv.aurora_create_project("x", "image", "image_genesis")["project_id"]
+    dossier = _dossier("soul_cinematic", "image_genesis")
+    dossier.pop("creative_direction")
+    db.insert_syntax_dossier(
+        model_id="soul_cinematic", output_type="image_genesis",
+        syntax_dossier=dossier, sources=_sources(3),
+        source_types_covered=["official_docs", "mcp_introspection", "community_forums"],
+        ttl_days=30, confidence=1.0, db_path=str(server_db))
+    out = srv.aurora_build_prompt(
+        project_id=pid, model_id="soul_cinematic", output_type="image_genesis",
+        shot_or_element_data={"subject": "cellist", "look": "noir"})
+    assert out["ok"] is False
+    assert "creative_direction" in out["error"]
 
 
 def test_propose_image_generation_includes_research_status(server_db):

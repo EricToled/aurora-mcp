@@ -1055,6 +1055,23 @@ _REQUIRED_DOSSIER_FIELDS = {
 }
 _HIGGSFIELD_MCP = "mcp__62dd5e40-9da1-495c-b80a-8a8ddeb93147__models_explore"
 
+# Génesis/Anchor images must NOT have their look invented: the mandatory research
+# also has to verify the IDEAL lighting, style and camera for the shot type, not
+# just prompt syntax. These land in syntax_dossier.creative_direction.
+_IMAGE_RESEARCH_OUTPUT_TYPES = {"image_genesis", "image_anchor"}
+_REQUIRED_CREATIVE_DIRECTION_FIELDS = {"lighting", "style", "camera"}
+
+
+def _missing_creative_direction(dossier: Optional[dict[str, Any]]) -> list[str]:
+    """Return the creative_direction fields (lighting/style/camera) that are
+    absent or empty. Empty list => all three are present and researched."""
+    cd = (dossier or {}).get("creative_direction")
+    if not isinstance(cd, dict):
+        return sorted(_REQUIRED_CREATIVE_DIRECTION_FIELDS)
+    return sorted(
+        f for f in _REQUIRED_CREATIVE_DIRECTION_FIELDS if not str(cd.get(f, "")).strip()
+    )
+
 
 @mcp.tool()
 def aurora_request_platform_research(
@@ -1130,6 +1147,31 @@ def aurora_request_platform_research(
             "operator must research manually and supply the dossier."
         ),
     }
+    if is_image:
+        shot_type = str((shot_context or {}).get("shot_type") or "").strip()
+        # For Génesis/Anchor images, AURORA must research (never invent) the ideal
+        # lighting, style and camera for THIS shot type — and recording is blocked
+        # until they are present in syntax_dossier.creative_direction.
+        brief["creative_direction_research_required"] = {
+            "why": (
+                "Génesis/Anchor images: do NOT invent lighting, style or camera. "
+                "Research the IDEAL lighting, visual style and camera/lens for this "
+                "shot type and record them in syntax_dossier.creative_direction."
+            ),
+            "must_research": sorted(_REQUIRED_CREATIVE_DIRECTION_FIELDS),
+            "queries": [
+                f"ideal lighting setup for {shot_type or forum_kind} advertising photography",
+                f"best visual style reference for {shot_type or forum_kind} {model_id}",
+                f"ideal camera lens and framing for {shot_type or forum_kind} product/character shot",
+            ],
+            "expected_dossier_field": {
+                "creative_direction": {
+                    "lighting": "<researched ideal lighting for the shot type>",
+                    "style": "<researched ideal visual style>",
+                    "camera": "<researched ideal camera/lens/framing>",
+                }
+            },
+        }
     return {"ok": True, "cached": False, "research_brief": brief}
 
 
@@ -1165,6 +1207,17 @@ def aurora_record_platform_research(
     missing_fields = _REQUIRED_DOSSIER_FIELDS - set((syntax_dossier or {}).keys())
     if missing_fields:
         return {"ok": False, "error": f"dossier missing fields: {sorted(missing_fields)}"}
+
+    if output_type in _IMAGE_RESEARCH_OUTPUT_TYPES:
+        missing_cd = _missing_creative_direction(syntax_dossier)
+        if missing_cd:
+            return {
+                "ok": False,
+                "error": "image research must verify ideal creative_direction "
+                         f"(lighting/style/camera) for the shot type; missing/empty: {missing_cd}",
+                "required": "syntax_dossier.creative_direction = {lighting, style, camera}, "
+                            "all non-empty and researched (not invented)",
+            }
 
     covered = found_source_types & _REQUIRED_SOURCE_TYPES
     confidence = len(covered) / 3.0
@@ -1235,6 +1288,24 @@ def aurora_build_prompt(
         }
 
     dossier = dossier_row["syntax_dossier"]
+    if output_type in _IMAGE_RESEARCH_OUTPUT_TYPES:
+        missing_cd = _missing_creative_direction(dossier)
+        if missing_cd:
+            return {
+                "ok": False,
+                "error": "research required: dossier lacks verified creative_direction "
+                         f"(lighting/style/camera) for this image — missing: {missing_cd}",
+                "required_action": "research the ideal lighting/style/camera for the shot "
+                                   "type, then re-record via aurora_record_platform_research",
+                "next_call": {
+                    "tool": "aurora_request_platform_research",
+                    "args": {
+                        "project_id": project_id,
+                        "model_id": model_id,
+                        "output_type": output_type,
+                    },
+                },
+            }
     data = shot_or_element_data or {}
     prompt_final = _render_prompt_with_dossier(dossier, data)
     warnings = _validate_prompt_against_dossier(prompt_final, dossier)
