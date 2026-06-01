@@ -1570,11 +1570,12 @@ def aurora_lint_prompt(
     refs: Optional[list[dict[str, Any]]] = None,
     overrides_text: str = "",
     sports_broadcast: bool = False,
+    element_role: str = "",
 ) -> dict[str, Any]:
     """Deterministic prompt linter (gate_prompt_lint) — el linter que antes vivía
     en la skill aurora-prompt-linter, ahora dentro de AURORA.
 
-    Valida en 3 capas el texto del prompt visual ANTES de entregarlo:
+    Valida en 4 capas el texto del prompt visual ANTES de entregarlo:
       1. Redundancia con refs por categoría P/O/L/PR/S — no re-describas lo que la
          referencia ya muestra (solo describe motion/cámara/evolución/atributos no
          visibles).
@@ -1582,11 +1583,18 @@ def aurora_lint_prompt(
          Image 2/Nano Banana Pro/Midjourney según el caso 1/2/3a/3b/3c/4).
       3. Estructura: word-count cap por caso, negative prompt obligatorio, vocab
          baneado, keywords de sports broadcast cuando aplica.
+      4. Reutilización de elemento (sólo si ``element_role`` ∈ {character, prop}):
+         la imagen Génesis de un personaje o prop es un ANCLA reutilizable, así que
+         el MAIN debe (A) declarar un fondo neutro blanco o gris claro y (B) NO
+         contener descriptores de una escena específica — debe ser general para
+         adaptarse a distintas escenas.
 
     ``case`` ∈ {1, 2, 3a, 3b, 3c, 4}. ``refs`` es una lista de dicts con
-    {file, role, tags:[P1,O1,...]}. Un FAIL queda registrado y BLOQUEA emit hasta
-    que se corrija o se autorice con ``OVERRIDE: <término|categoría> - <razón>`` en
-    overrides_text. Devuelve el reporte determinista completo."""
+    {file, role, tags:[P1,O1,...]}. ``element_role`` ∈ {character, prop} cuando se
+    lint-ea la Génesis de ese elemento (déjalo vacío para escenas/locaciones).
+    Un FAIL queda registrado y BLOQUEA emit hasta que se corrija o se autorice con
+    ``OVERRIDE: <término|categoría|ELEMENT> - <razón>`` en overrides_text. Devuelve
+    el reporte determinista completo."""
     _ensure_db()
     if case not in prompt_lint.VALID_CASES:
         return {
@@ -1598,6 +1606,7 @@ def aurora_lint_prompt(
         prompt=prompt or "", case=case, platform=platform or "",
         refs=refs or [], overrides_text=overrides_text or "",
         sports_broadcast=bool(sports_broadcast),
+        element_role=element_role or "",
     )
     db.put_artifact(project_id, "prompt_lint", lint_result, db_path=_db())
     gate_result = gate_prompt_lint.check(lint_result)

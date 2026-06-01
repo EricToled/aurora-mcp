@@ -102,6 +102,61 @@ def test_unknown_case_is_rejected():
     assert "Unknown case" in res["report"]
 
 
+# === element reusability (character/prop Génesis) ==========================
+def test_element_genesis_requires_neutral_background():
+    # A character Génesis with no neutral-background statement is a FAIL.
+    res = prompt_lint.lint(
+        prompt="A confident athlete standing tall.\nNegative: blur",
+        case="1", platform="", element_role="character")
+    assert res["status"] == "FAIL"
+    assert any(v["category"] == "ELEMENT" and v["term"] == "neutral_background"
+               for v in res["violations"])
+
+
+def test_element_genesis_flags_scene_descriptor():
+    # Neutral bg present, but a scene descriptor ("forest") breaks reusability.
+    res = prompt_lint.lint(
+        prompt="A confident athlete on a plain white background in a forest.\nNegative: blur",
+        case="1", platform="", element_role="prop")
+    assert res["status"] == "FAIL"
+    assert any(v["category"] == "ELEMENT" and v["term"] == "forest"
+               for v in res["violations"])
+
+
+def test_element_genesis_clean_passes():
+    res = prompt_lint.lint(
+        prompt="A confident athlete, full body, on a plain white background.\nNegative: blur",
+        case="1", platform="", element_role="character")
+    assert res["status"] == "PASS", res["violations"]
+    assert res["element_role"] == "character"
+
+
+def test_element_rules_do_not_apply_without_role():
+    # Same scene-y prompt without element_role must NOT trigger ELEMENT layer.
+    res = prompt_lint.lint(
+        prompt="A confident athlete in a forest at sunset.\nNegative: blur",
+        case="1", platform="")
+    assert not any(v["category"] == "ELEMENT" for v in res["violations"])
+
+
+def test_element_violation_is_overridable():
+    res = prompt_lint.lint(
+        prompt="A confident athlete on a plain white background in a forest.\nNegative: blur",
+        case="1", platform="", element_role="character",
+        overrides_text="OVERRIDE: forest - the forest is part of this prop's identity")
+    assert res["status"] == "PASS", res["violations"]
+    assert res["overrides_accepted"]
+
+
+def test_element_category_override_clears_all():
+    # OVERRIDE: ELEMENT clears the whole layer (missing neutral bg + scene term).
+    res = prompt_lint.lint(
+        prompt="A confident athlete in a forest.\nNegative: blur",
+        case="1", platform="", element_role="character",
+        overrides_text="OVERRIDE: ELEMENT - this is a deliberate in-scene reference")
+    assert res["status"] == "PASS", res["violations"]
+
+
 # === tool + emit integration ================================================
 def test_tool_records_gate_and_blocks_emit(server_db):
     pid = srv.aurora_create_project("x", "image", "image_genesis")["project_id"]

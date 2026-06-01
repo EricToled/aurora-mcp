@@ -163,6 +163,78 @@ REQUIRED_SPORTS_BROADCAST:
 NEGATIVE_PROMPT_REQUIRED:
   - negative
 
+# ---------- ELEMENT reusability (NUEVO 2026-05-31) ----------
+# Sólo aplica cuando se lint-ea con element_role ∈ {character, prop}: las
+# imágenes Génesis de personajes y props son ANCLAS reutilizables, así que su
+# prompt debe (A) declarar un fondo neutro blanco o gris claro y (B) NO contener
+# información de una escena específica (deben ser generales para adaptarse a
+# distintas escenas). Ambas listas son editables sin tocar código; las
+# violaciones son override-ables con `OVERRIDE: <término|ELEMENT> - <razón>`.
+
+# (A) Al menos uno de estos términos debe estar PRESENTE en el MAIN.
+NEUTRAL_BACKGROUND_TERMS:
+  - neutral background
+  - neutral backdrop
+  - plain background
+  - plain backdrop
+  - white background
+  - white backdrop
+  - light gray background
+  - light grey background
+  - light gray backdrop
+  - light grey backdrop
+  - gray background
+  - grey background
+  - seamless background
+  - seamless backdrop
+  - studio background
+  - studio backdrop
+  - solid background
+  - solid color background
+  - solid colour background
+  - fondo neutro
+  - fondo blanco
+  - fondo gris claro
+  - fondo gris
+  - fondo de estudio
+  - fondo liso
+
+# (B) Ninguno de estos descriptores de escena/entorno debe aparecer en el MAIN.
+SCENE_ENVIRONMENT_TERMS:
+  - forest
+  - beach
+  - city street
+  - street
+  - kitchen
+  - office
+  - bedroom
+  - living room
+  - stadium
+  - mountain
+  - mountains
+  - desert
+  - skyline
+  - cityscape
+  - alley
+  - rooftop
+  - park
+  - garden
+  - warehouse
+  - restaurant
+  - gym interior
+  - indoors
+  - outdoors
+  - landscape
+  - sunset
+  - sunrise
+  - golden hour
+  - at night
+  - at dawn
+  - at dusk
+  - rainy
+  - snowy
+  - foggy
+
 # ---------- ALLOWED motion/camera vocabulary (exento de baneo) ----------
 # Si un término baneado aparece en proximidad (<50 chars) de uno de estos
 # prefixes, se considera contexto de motion/cámara y NO se flaggea.

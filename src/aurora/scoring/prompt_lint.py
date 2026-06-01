@@ -35,6 +35,10 @@ CASE_CONFIGS: dict[str, dict[str, Any]] = {
 
 VALID_CASES = tuple(CASE_CONFIGS.keys())
 
+# Element roles whose Genesis/Anchor images are reusable anchors: their prompt
+# must declare a neutral white/light-gray background and stay scene-agnostic.
+ELEMENT_ROLES = {"character", "prop"}
+
 DIRECTIONAL_PREPOSITIONS = [
     "away from", "toward", "towards", "off", "over", "behind",
     "in front of", "across", "past", "from her", "from his",
@@ -116,9 +120,15 @@ def parse_overrides(user_message: str) -> list[dict[str, str]]:
         term = m.group("term").strip().strip('"\'')
         reason = m.group("reason").strip()
         is_cat = bool(re.match(r"^[A-Z]{1,2}\d*$", term))
+        # ELEMENT is a named (multi-letter) category, unlike the P/O/L/PR/S tags.
+        category = (
+            "ELEMENT" if term.upper() == "ELEMENT"
+            else normalize_tag(term) if is_cat
+            else ""
+        )
         overrides.append({
             "term": term,
-            "category": normalize_tag(term) if is_cat else "",
+            "category": category,
             "reason": reason,
             "source_text": m.group(0),
         })
@@ -164,10 +174,16 @@ def lint(
     refs: Optional[list[dict[str, Any]]] = None,
     overrides_text: str = "",
     sports_broadcast: bool = False,
+    element_role: str = "",
     vocab: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Run the 3-layer deterministic lint. Returns a dict with status PASS/FAIL,
-    violations, warnings, suggestions, and a human-readable report."""
+    """Run the deterministic lint. Returns a dict with status PASS/FAIL,
+    violations, warnings, suggestions, and a human-readable report.
+
+    ``element_role`` ∈ {character, prop} marks the prompt as a reusable element
+    anchor (Génesis de personaje/prop), which adds a 4th layer: the MAIN must
+    declare a neutral white/light-gray background and must NOT carry
+    scene-specific descriptors, so the element adapts to any scene."""
     vocab = vocab if vocab is not None else load_vocab()
     refs = refs or []
     config = CASE_CONFIGS.get(case)
@@ -247,17 +263,33 @@ def lint(
                 violations.append({"term": kw, "category": "REQUIRED",
                                    "reason": "Required keyword for sports broadcast (Regla 26 v6.1)"})
 
+    # Layer 4: element reusability — a character/prop Génesis image is a reusable
+    # anchor, so its prompt must declare a neutral white/light-gray background
+    # (A) and stay scene-agnostic (B). Both are override-able.
+    role = (element_role or "").strip().lower()
+    if role in ELEMENT_ROLES:
+        if not any(find_term_in_text(t, main) for t in vocab.get("NEUTRAL_BACKGROUND_TERMS", []) or []):
+            _consume({"term": "neutral_background", "category": "ELEMENT",
+                      "reason": f"{role} Génesis must state a neutral white or light-gray "
+                                "background so the element is reusable across scenes"})
+        for term in vocab.get("SCENE_ENVIRONMENT_TERMS", []) or []:
+            if find_term_in_text(term, main):
+                _consume({"term": term, "category": "ELEMENT",
+                          "reason": "scene-specific descriptor — a Génesis element prompt must "
+                                    "stay general/scene-agnostic to adapt to different scenes"})
+
     status = "PASS" if not violations else "FAIL"
     suggestions = _build_suggestions(violations, platform, case)
     report = _build_report(
         case, config, platform, wc_main, negative, cats, sports_broadcast,
         sec_req, sec_pres, violations, warnings, overrides_accepted, suggestions, status,
+        role,
     )
 
     return {
         "status": status, "case_type": case, "platform": platform,
         "word_count": wc_main, "word_budget": list(config["budget"]),
-        "covered_categories": sorted(cats),
+        "covered_categories": sorted(cats), "element_role": role,
         "sections_required": sec_req, "sections_present": sec_pres,
         "sections_missing": sec_miss, "violations": violations,
         "overrides_accepted": overrides_accepted, "warnings": warnings,
@@ -283,12 +315,22 @@ def _build_suggestions(violations: list[dict[str, str]], platform: str, case: st
             suggestions.append(f"Fix structure: {terms}")
         elif cat == "REQUIRED":
             suggestions.append(f"Add to MAIN: {terms}")
+        elif cat == "ELEMENT":
+            if "neutral_background" in terms:
+                suggestions.append(
+                    "Add a neutral background to MAIN (e.g. 'on a plain white background' "
+                    "or 'light gray seamless backdrop') — element Génesis must be reusable")
+            scene = [t for t in terms if t != "neutral_background"]
+            if scene:
+                suggestions.append(
+                    f"Remove scene-specific descriptors from MAIN: {scene} "
+                    "(Génesis element must stay scene-agnostic)")
     return suggestions
 
 
 def _build_report(case, config, platform, wc_main, negative, cats, sports_broadcast,
                   sec_req, sec_pres, violations, warnings, overrides_accepted,
-                  suggestions, status) -> str:
+                  suggestions, status, element_role="") -> str:
     L = [
         "=" * 64,
         "AURORA PROMPT LINTER REPORT v1.1",
@@ -299,6 +341,8 @@ def _build_report(case, config, platform, wc_main, negative, cats, sports_broadc
         f"Negative prompt: {'present' if negative.strip() else 'MISSING'}",
         f"Categories covered by refs: {sorted(cats) if cats else '(none)'}",
         f"Sports broadcast mode: {'on' if sports_broadcast else 'off'}",
+        (f"Element role: {element_role} (neutral-bg + scene-agnostic enforced)"
+         if element_role in ELEMENT_ROLES else "Element role: (none)"),
         "",
     ]
     if sec_req:
