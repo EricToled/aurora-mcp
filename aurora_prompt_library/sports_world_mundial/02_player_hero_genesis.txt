@@ -1,0 +1,8 @@
+SUBJECT: a professional football player, lean muscular build, in a plain training kit and cleats.
+ACTION / POSE: confident hero stance, ball resting at one foot, looking toward camera, full body in frame.
+CAMERA / LENS: 85mm lens, full-body shot, slight low angle, subject centered.
+LIGHTING: soft key light with subtle rim light, neutral color temperature, even exposure.
+PLACEMENT ANCHOR: on a plain seamless white background, no pitch, no scene, no crowd.
+STYLE: photoreal, editorial sports portrait, natural skin and fabric texture, no stylization.
+
+Negative: blurry, distorted, extra limbs, deformed hands, text, logos, watermark, pitch, stadium, scene background

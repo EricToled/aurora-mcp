@@ -1,0 +1,27 @@
+# Sports World — "NO ES VERLO, ES JUGARLO" — World Cup (mundial) master genesis prompts.
+campaign: sports_world_mundial
+tagline: "NO ES VERLO, ES JUGARLO"
+project_id: "1dd7b467-3296-4235-91fa-fe4efa81f5e4"
+created: "2026-06-01"
+model_default: gpt_image_2
+genesis_rules:
+  - neutral_background: true        # plain white / light-gray seamless
+  - scene_agnostic: true           # no stadium/pitch/crowd in the prompt
+tags: [sports, football, soccer, mundial, world_cup, genesis, character, prop]
+
+prompts:
+  - file: 01_fan_jersey_genesis.txt
+    element_role: character
+    subject: football_fan
+  - file: 02_player_hero_genesis.txt
+    element_role: character
+    subject: football_player
+  - file: 03_match_ball_prop_genesis.txt
+    element_role: prop
+    subject: football
+  - file: 04_trophy_prop_genesis.txt
+    element_role: prop
+    subject: trophy
+  - file: 05_coach_genesis.txt
+    element_role: character
+    subject: coach

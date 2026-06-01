@@ -29,6 +29,7 @@ from . import (
     db,
     decision_sheet,
     execution_pack_builder,
+    genesis_policy,
     theme_resolver,
     totp,
 )
@@ -1710,6 +1711,12 @@ def aurora_create_decision_sheet(
     todo lo demás queda PENDIENTE hasta que el operador apruebe con
     aurora_approve_decision_sheet (autenticado con operator_token).
 
+    GENESIS (R11): si una decisión de ``model_routing`` para una imagen genesis
+    elige un modelo distinto al default (``gpt_image_2``), se inyecta
+    automáticamente un bloque ``platform_genesis_deviation`` SIN acknowledge para
+    que el operador lo vea y lo firme. emit bloquea (GENESIS_DEVIATION_BLOCKED) si
+    la desviación no está acknowledged o su razón no pasa el whitelist.
+
     Crear la hoja NO la aprueba: emit sigue bloqueado hasta la aprobación
     autenticada. Devuelve un resumen con lo pendiente."""
     _ensure_db()
@@ -1717,6 +1724,10 @@ def aurora_create_decision_sheet(
     if not project:
         return {"ok": False, "reason": f"unknown project: {project_id}"}
     normalized = decision_sheet.normalize_decisions(decisions or [])
+    # R11: si una decisión de model_routing para genesis eligió un modelo distinto
+    # al default (gpt_image_2), inyecta un esqueleto platform_genesis_deviation sin
+    # acknowledge para que el operador esté obligado a verlo y firmarlo.
+    normalized = genesis_policy.inject_deviation_skeletons(normalized)
     # Re-crear la hoja siempre exige una nueva aprobación: nunca arrastres un
     # operator_approved viejo a un set de decisiones distinto (cierra el hueco de
     # "aprobé una hoja, le agrego decisiones nuevas y emito sin que las vea").
@@ -2082,6 +2093,44 @@ def aurora_emit_execution_pack(
             "suggestions": lint_art.get("suggestions", []),
             "report": lint_art.get("report", ""),
         }
+
+    # GENESIS ROUTING POLICY (R11, conditional): a genesis image that routes to a
+    # NON-default model (anything other than gpt_image_2) must carry an
+    # operator-acknowledged platform_genesis_deviation whose rationale survives the
+    # whitelist. Otherwise delivery is blocked (Claude can't silently swap in a
+    # "cinematic" model). Runs before the SHAPE gates so the block is deterministic;
+    # authorized deviations are audited. No-op for projects with no genesis routing
+    # decision, and overridable via the decision_sheet gate bypass.
+    if mode in _CONTENT_MODES and "all" not in active:
+        gsheet = db.get_artifact(project_id, "decision_sheet", db_path=_db())
+        gen_problems = genesis_policy.genesis_deviation_problems(gsheet)
+        if gen_problems:
+            return {
+                "ok": False,
+                "status": "GENESIS_DEVIATION_BLOCKED",
+                "reason": (
+                    "El ruteo de una imagen genesis eligió un modelo distinto al "
+                    f"default ({genesis_policy.PRIMARY_GENESIS_DEFAULT}) sin "
+                    "autorización válida. Adjunta platform_genesis_deviation, haz "
+                    "que el operador lo apruebe (queda acknowledged) y da una razón "
+                    "del whitelist (no 'cinematic look'/'premium quality')."
+                ),
+                "project_id": project_id,
+                "genesis_problems": gen_problems,
+                "primary_genesis_default": genesis_policy.PRIMARY_GENESIS_DEFAULT,
+            }
+        for dev in genesis_policy.authorized_genesis_deviations(gsheet):
+            db.insert_audit(
+                project_id=project_id,
+                criterion="GENESIS_DEVIATION_AUTHORIZED",
+                verdict="pass",
+                notes=(
+                    f"genesis routing {dev['id']} -> {dev['chosen_model']} "
+                    f"(default {dev['recommended_model']}); reason: {dev['rationale']}"
+                ),
+                audited_by="operator",
+                db_path=_db(),
+            )
 
     project_view = {
         "project_id": project_id,

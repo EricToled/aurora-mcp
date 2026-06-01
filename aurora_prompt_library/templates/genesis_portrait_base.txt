@@ -1,0 +1,8 @@
+SUBJECT: {{subject}} — {{age_build_descriptor}}, {{wardrobe}}.
+ACTION / POSE: {{pose}}, full body in frame.
+CAMERA / LENS: {{lens}} lens, {{shot_size}}, eye-level, subject centered.
+LIGHTING: {{lighting}} — even, soft, neutral color temperature.
+PLACEMENT ANCHOR: standing on a plain seamless {{background_color}} background, no scene, no props beyond wardrobe.
+STYLE: photoreal, editorial, natural skin texture and fabric detail, no stylization.
+
+Negative: blurry, distorted, extra limbs, deformed hands, text, watermark, scene background, environment, harsh shadows

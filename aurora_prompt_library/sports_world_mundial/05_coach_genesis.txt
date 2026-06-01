@@ -1,0 +1,8 @@
+SUBJECT: a football coach, middle-aged, composed expression, in a plain team jacket.
+ACTION / POSE: arms crossed, standing, looking toward camera, full body in frame.
+CAMERA / LENS: 50mm lens, full-body shot, eye-level, subject centered.
+LIGHTING: soft even studio light, neutral daylight color temperature, gentle rim light.
+PLACEMENT ANCHOR: on a plain seamless light-gray background, no touchline, no scene, no crowd.
+STYLE: photoreal, editorial portrait, natural skin and fabric texture, no stylization.
+
+Negative: blurry, distorted, extra limbs, deformed hands, text, logos, watermark, touchline, crowd, scene background

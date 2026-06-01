@@ -1,0 +1,28 @@
+# GPT Image 2 — validated default parameters for genesis stills (R11).
+# This is the DEFAULT genesis model: character portraits and studio-backdrop
+# locations on a neutral background. Routing to any other model for genesis
+# requires an operator-acknowledged platform_genesis_deviation (see
+# src/aurora/genesis_policy.py).
+model_id: gpt_image_2
+role: default_genesis
+
+# Validated generation parameters.
+params:
+  resolution: "2k"        # 2048 px long edge
+  quality: high
+  aspect_ratio: "2:3"     # portrait genesis default; 3:2 for landscape backdrops
+  medias: none            # genesis is text-to-image — no input medias by default
+
+# Acceptable aspect ratios for genesis depending on subject.
+aspect_ratios:
+  character_portrait: "2:3"
+  location_studio_backdrop: "3:2"
+  square_product: "1:1"
+
+best_practices:
+  - "Always place the subject on a neutral white or light-gray seamless background."
+  - "Keep the prompt scene-agnostic so the genesis element can be reused across scenes."
+  - "State subject, action/pose, camera/lens, lighting, placement anchor, and style explicitly."
+  - "Avoid scene-specific environments (forest, beach, sunset) in genesis prompts."
+  - "Use a Negative block to suppress artefacts (blurry, distorted, extra limbs, text)."
+  - "Prefer photoreal, documentary/editorial style unless the brief specifies otherwise."

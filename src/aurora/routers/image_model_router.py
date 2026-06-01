@@ -16,6 +16,15 @@ from .. import capability_refresh
 # callable surface before any credit spend.
 IMAGE_GENESIS_ROUTES: list[dict[str, Any]] = [
     {
+        "route_id": "gpt_image_2_genesis_default",
+        "route_type": "mcp_callable_or_ui_verified",
+        "model_id": "gpt_image_2",
+        "use_for": "DEFAULT genesis: character portraits + studio-backdrop "
+                   "locations on neutral background; strong prompt adherence",
+        "image_types": ["genesis", "character", "prop", "anchor", "style_frame"],
+        "priority": 100,
+    },
+    {
         "route_id": "soul_cinematic_genesis",
         "route_type": "mcp_callable_or_ui_verified",
         "model_id": "soul_cinematic",
@@ -106,7 +115,7 @@ def select_route(
     for r in routes:
         supported = [t.lower() for t in r.get("image_types", [])]
         score = 100 if itype in supported else (50 if not supported else 0)
-        candidate = {**r, "match_score": score}
+        candidate = {**r, "match_score": score, "priority": int(r.get("priority", 0))}
         # Annotate per-model constraints when an explicit model_id is present.
         model_id = r.get("model_id", "")
         if aspect_ratio and model_id:
@@ -119,7 +128,9 @@ def select_route(
             )
         ranked.append(candidate)
 
-    ranked.sort(key=lambda c: c["match_score"], reverse=True)
+    # Best match first; among equal matches, the higher-priority default wins
+    # (gpt_image_2 carries priority=100 so it leads genesis routing).
+    ranked.sort(key=lambda c: (c["match_score"], c["priority"]), reverse=True)
     best = ranked[0] if ranked and ranked[0]["match_score"] > 0 else None
     return {
         "ok": best is not None,

@@ -53,7 +53,7 @@ def normalize_decisions(decisions: list[dict[str, Any]] | None) -> list[dict[str
         else:
             seen[did] = 0
         approved = bool(d.get("approved")) or source == SOURCE_OPERATOR
-        out.append({
+        row = {
             "id": did,
             "category": category,
             "item": item,
@@ -61,7 +61,14 @@ def normalize_decisions(decisions: list[dict[str, Any]] | None) -> list[dict[str
             "value": d.get("value"),
             "source": source,
             "approved": approved,
-        })
+        }
+        # Preserve genesis-deviation metadata (R11) so the platform-genesis
+        # policy survives normalization and reaches emit / approval.
+        if d.get("platform_genesis_deviation") is not None:
+            row["platform_genesis_deviation"] = d["platform_genesis_deviation"]
+        if d.get("rationale") is not None:
+            row["rationale"] = d["rationale"]
+        out.append(row)
     return out
 
 
@@ -114,6 +121,12 @@ def apply_approval(
         for d in decisions:
             if d["id"] in targets:
                 d["approved"] = True
+    # An approved genesis-routing deviation is, by definition, operator
+    # acknowledged — the authenticated approval IS the acknowledgement (R11).
+    for d in decisions:
+        dev = d.get("platform_genesis_deviation")
+        if d.get("approved") and isinstance(dev, dict):
+            dev["operator_acknowledged"] = True
     sheet["operator_approved"] = not pending_decisions(sheet)
     return sheet
 

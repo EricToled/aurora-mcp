@@ -1,0 +1,8 @@
+SUBJECT: a modern football (soccer ball), clean unbranded panel design, slightly worn match texture.
+ACTION / POSE: resting still, centered, full object in frame.
+CAMERA / LENS: 100mm macro lens, product shot, eye-level, object centered.
+LIGHTING: soft even product lighting, neutral color temperature, gentle highlights to show material.
+PLACEMENT ANCHOR: on a plain seamless light-gray background, no pitch, no grass, no scene.
+STYLE: photoreal product still, accurate material and stitching detail, no stylization.
+
+Negative: blurry, distorted, text, logos, watermark, grass, pitch, hands, scene background, harsh reflections
