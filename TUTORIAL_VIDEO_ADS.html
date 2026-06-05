@@ -74,6 +74,7 @@
   .objectives li::before { content: "→"; color: var(--accent); font-weight: 700; }
   b, strong { color: #fff; }
   code { background: var(--panel2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+  .ui { background: #20202c; color: #cfe9ff; padding: 1px 7px; border-radius: 4px; font-weight: 600; font-size: 12.5px; white-space: nowrap; }
   .kv { background: #05050a; border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; color: #cfe9ff; margin: 0 0 12px; }
   .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
   .pill.ok { background: rgba(74,222,128,.15); color: var(--ok); }
@@ -84,9 +85,29 @@
   .pill.kling { background: rgba(167,139,250,.16); color: var(--accent2); }
   .note { border-left: 3px solid var(--warn); background: rgba(251,191,36,.06); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 13.5px; margin: 0 0 12px; color: #f4e4b8; }
   .note.acc { border-color: var(--accent); background: rgba(110,231,255,.06); color: #bfeeff; }
+  .note.kl { border-color: var(--accent2); background: rgba(167,139,250,.07); color: #e0d4ff; }
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 4px 0 14px; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   th { color: var(--muted); font-weight: 700; font-size: 11px; text-transform: uppercase; }
+  ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.steps > li {
+    counter-increment: step; position: relative; padding: 4px 0 12px 38px; margin: 0; border-left: 1px solid var(--line); margin-left: 12px;
+  }
+  ol.steps > li:last-child { border-left: 1px solid transparent; }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: -12px; top: 0; width: 24px; height: 24px;
+    background: var(--accent); color: #04141a; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 800;
+  }
+  ol.steps.kl > li::before { background: var(--accent2); color: #1a0b3a; }
+  .srcs { list-style: none; padding: 0; margin: 0; }
+  .srcs li { padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; display: flex; gap: 8px; }
+  .srcs li:last-child { border-bottom: none; }
+  .srcs a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  .srcs a:hover { text-decoration: underline; }
+  .srcs .badge { font-size: 10px; font-weight: 800; letter-spacing: .5px; padding: 1px 7px; border-radius: 4px; flex: none; height: 18px; margin-top: 2px; }
+  .badge.off { background: rgba(74,222,128,.15); color: var(--ok); }
+  .badge.tut { background: rgba(251,191,36,.15); color: var(--warn); }
+  .badge.mcp { background: rgba(167,139,250,.16); color: var(--accent2); }
   /* Quiz */
   .q { margin-bottom: 18px; }
   .q .qtext { font-weight: 600; font-size: 14.5px; margin-bottom: 10px; }
@@ -133,10 +154,6 @@
   .stagefoot { display: flex; justify-content: space-between; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
   .locknote { text-align: center; padding: 50px 20px; color: var(--muted); }
   .locknote .big { font-size: 40px; margin-bottom: 10px; }
-  .gridstat { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 18px; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .stat .n { font-size: 22px; font-weight: 700; color: var(--accent); }
-  .stat .l { font-size: 12px; color: var(--muted); }
   .toolbar { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
   .toolbar button { font-size: 12px; padding: 7px 12px; }
   .badge-final { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #04141a; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; }
@@ -145,7 +162,7 @@
 <body>
 <header>
   <h1>AURORA ACADEMY</h1>
-  <p>Tutorial interactivo — Crear <b style="color:#cfe9ff">videos publicitarios</b> con <span class="pill flow">Google Flow / Veo</span> &amp; <span class="pill kling">Kling</span> · evaluación + entregables por etapa</p>
+  <p>Tutorial interactivo — <b style="color:#cfe9ff">videos publicitarios</b> con <span class="pill flow">Google Flow / Veo</span> &amp; <span class="pill kling">Kling</span> · anclado en interfaces y tutoriales reales · evaluación + entregables por etapa</p>
   <div class="progressbar"><div id="globalbar"></div></div>
 </header>
 
@@ -168,9 +185,14 @@
 <script>
 /* ============================================================
    AURORA ACADEMY — datos del curso
-   Metodología alineada con AURORA: preproducción disciplinada,
-   génesis de assets, anchors/continuidad, biomecánica, prompt
-   research-driven, y "no inventar capabilities" (verifica en plataforma).
+   Contenido anclado en fuentes verificadas (jun 2026):
+   · Help oficial de Google Flow (support.google.com/flow)
+   · Guía oficial de cámara y user guide de Kling (kling.ai / app.klingai.com)
+   · Guía de prompting de Veo (DeepMind / Google Cloud)
+   · Introspección de modelos vía conector Higgsfield (kling3_0, veo3)
+   Metodología AURORA: preproducción disciplinada, génesis de assets,
+   anchors/continuidad, biomecánica, prompt research-driven y
+   "no inventar capabilities" (verifica versión en plataforma).
    ============================================================ */
 const PASS = 0.70; // umbral de aprobación de cada evaluación
 
@@ -181,40 +203,51 @@ const STAGES = [
   objectives:[
     "Entender el ciclo: Leer → Evaluación → Entregable.",
     "Saber qué desbloquea cada etapa y dónde se guarda tu avance.",
-    "Adoptar la disciplina AURORA: nada de improvisar prompts."
+    "Adoptar la disciplina AURORA: nada de improvisar prompts ni inventar funciones."
   ],
   lessons:[
     {h:"El ciclo de cada etapa", body:`
-      <p>Cada etapa tiene tres bloques en este orden:</p>
+      <p>Cada etapa tiene estos bloques en orden:</p>
       <ol>
-        <li><b>Lección</b> — el contenido que debes dominar.</li>
+        <li><b>Lección</b> — contenido anclado en la interfaz real de cada plataforma.</li>
+        <li><b>Tutoriales y fuentes reales</b> — enlaces oficiales y guías para que verifiques y amplíes.</li>
         <li><b>Evaluación</b> — preguntas con calificación. Necesitas <b>${Math.round(PASS*100)}%</b> para aprobar.</li>
         <li><b>Entregable</b> — un artefacto real que produces y se guarda en tu navegador.</li>
       </ol>
-      <p>La <b>siguiente etapa se desbloquea</b> cuando apruebas la evaluación. Una etapa se marca como <span class="pill ok">✓ Completa</span> cuando apruebas la evaluación <b>y</b> guardas el entregable.</p>`},
-    {h:"Dónde vive tu progreso", body:`
-      <p>Todo se guarda en <code>localStorage</code> de este navegador. No hay servidor, no hay internet requerido: este archivo es portable. Usa <b>Exportar avance</b> para llevarte un JSON con tus entregables y notas.</p>
-      <div class="note acc">Si abres el archivo en otro navegador o borras datos del sitio, empiezas de cero. Exporta antes de migrar.</div>`},
+      <p>La <b>siguiente etapa se desbloquea</b> al aprobar la evaluación. Una etapa queda <span class="pill ok">✓ Completa</span> cuando apruebas <b>y</b> guardas el entregable.</p>`},
+    {h:"Por qué este curso cita fuentes", body:`
+      <p>AURORA es <b>research-driven</b>: no inventa capacidades de las plataformas. Cada etapa de Flow/Kling trae una sección <b>Fuentes reales</b> con tres tipos de referencia:</p>
+      <ul>
+        <li><span class="pill ok">OFICIAL</span> documentación de Google / Kling.</li>
+        <li><span class="pill warn">TUTORIAL</span> guías de la comunidad (paso a paso).</li>
+        <li><span class="pill kling">CONECTOR</span> introspección de modelos (parámetros reales confirmados vía MCP).</li>
+      </ul>
+      <div class="note">Las interfaces de IA cambian rápido. Si un botón no coincide exactamente con lo descrito, abre la fuente OFICIAL de esa etapa: es la verdad viva. El método no cambia; los nombres de botones sí.</div>`},
     {h:"La regla de oro AURORA", body:`
-      <p>Este curso enseña la doctrina de AURORA: <b>AURORA no improvisa, AURORA disciplina.</b> Tres mandamientos que repetiremos:</p>
       <ul>
         <li><b>No generes video sin preproducción validada.</b></li>
-        <li><b>No inventes capabilities</b> de Flow ni Kling: si dudas, verifica en la plataforma.</li>
+        <li><b>No inventes capabilities</b>: si dudas, verifica en la plataforma o en las fuentes.</li>
         <li><b>Cambia una sola variable por iteración</b> (modelo, anchor, prompt, biomecánica…), nunca varias a la vez.</li>
-      </ul>`}
+      </ul>
+      <p>Tu avance vive en <code>localStorage</code> de este navegador (sin servidor, sin internet salvo para abrir los enlaces). Usa <b>Exportar avance</b> para llevarte tus entregables.</p>`}
+  ],
+  sources:[
+    {b:"off", t:"Google Flow — Centro de ayuda oficial", u:"https://support.google.com/flow/"},
+    {b:"off", t:"Kling AI — User Guide oficial (app.klingai.com)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"}
   ],
   quiz:[
-    {q:"¿Qué necesitas para que se desbloquee la siguiente etapa?", o:["Solo leer la lección","Aprobar la evaluación de la etapa actual","Pagar una suscripción","Conectarte a internet"], a:1, e:"La siguiente etapa se abre al aprobar la evaluación (≥70%)."},
-    {q:"¿Cuándo una etapa queda marcada como “✓ Completa”?", o:["Al abrirla","Al aprobar la evaluación y guardar el entregable","Al ver el primer video","Nunca, son infinitas"], a:1, e:"Completa = evaluación aprobada + entregable guardado."},
-    {q:"Un principio central de AURORA es…", o:["Improvisar prompts rápido","Cambiar muchas variables a la vez para ir más rápido","No generar video sin preproducción validada","Inventar funciones si no estás seguro"], a:2, e:"Preproducción primero; nunca improvisar ni inventar capabilities."}
+    {q:"¿Qué necesitas para desbloquear la siguiente etapa?", o:["Solo leer","Aprobar la evaluación de la etapa actual","Pagar","Estar online"], a:1, e:"La siguiente etapa se abre al aprobar la evaluación (≥70%)."},
+    {q:"Si un botón de la app no coincide con lo descrito en el curso, ¿qué haces?", o:["Inventas el paso","Abres la fuente OFICIAL de la etapa y verificas","Te rindes","Usas otra app"], a:1, e:"No inventar capabilities: la fuente oficial es la verdad viva."},
+    {q:"¿Cuándo una etapa queda “✓ Completa”?", o:["Al abrirla","Al aprobar la evaluación y guardar el entregable","Al ver un video","Nunca"], a:1, e:"Completa = evaluación aprobada + entregable guardado."}
   ],
   deliverable:{
     title:"Tu contrato de aprendizaje",
-    instructions:"Define qué quieres lograr con este curso. Esto orienta el proyecto final.",
+    instructions:"Define qué quieres lograr. Esto orienta el proyecto final.",
     fields:[
       {id:"goal", type:"textarea", label:"¿Qué tipo de video publicitario quieres saber producir? (ej: spot de producto 15s, UGC para redes, hero ad cinemático)"},
       {id:"brand", type:"text", label:"Marca / producto con el que practicarás durante el curso"},
-      {id:"commit", type:"check", label:"Me comprometo a no saltarme la preproducción y a cambiar una variable por iteración."}
+      {id:"access", type:"text", label:"¿Tienes ya cuenta en Flow (Google AI Pro/Ultra) y en Kling? (sí/no/cuál)"},
+      {id:"commit", type:"check", label:"Me comprometo a verificar en las fuentes, no improvisar la preproducción y cambiar una variable por iteración."}
     ]
   }
 },
@@ -223,41 +256,43 @@ const STAGES = [
   lead:"Antes de tocar Flow o Kling: qué hace que un anuncio funcione y por qué la IA exige más estructura, no menos.",
   objectives:[
     "Distinguir un brief publicitario de un prompt.",
-    "Reconocer los tipos de output (hero ad, UGC, demo de producto, social vertical…).",
-    "Entender por qué el video AI se planea por shots y no por 'una sola toma mágica'."
+    "Reconocer los tipos de output (hero ad, UGC, demo, social vertical…).",
+    "Entender por qué el video AI se planea por shots cortos encadenados."
   ],
   lessons:[
     {h:"Anuncio ≠ clip bonito", body:`
-      <p>Un anuncio tiene un <b>trabajo</b>: mover a una persona de un estado emocional a una acción. Un clip de IA visualmente impresionante que no comunica beneficio ni deja una marca grabada es decoración cara.</p>
-      <p>El esqueleto mínimo de un anuncio corto:</p>
+      <p>Un anuncio tiene un <b>trabajo</b>: mover a una persona de un estado emocional a una acción. Esqueleto mínimo de un spot corto:</p>
       <ul>
-        <li><b>Hook (0–3s)</b> — detiene el scroll. Tensión, sorpresa o promesa.</li>
+        <li><b>Hook (0–3s)</b> — detiene el scroll: tensión, sorpresa o promesa.</li>
         <li><b>Desarrollo</b> — el beneficio o transformación, mostrado, no narrado.</li>
         <li><b>Producto / marca</b> — entra como héroe, no como pegote.</li>
-        <li><b>Final frame + CTA</b> — el cuadro que la persona recuerda y la acción que esperas.</li>
+        <li><b>Final frame + CTA</b> — el cuadro que se recuerda y la acción que esperas.</li>
       </ul>`},
     {h:"Tipos de output", body:`
-      <p>AURORA clasifica el output porque cada tipo cambia el ritmo, el casting y el modelo:</p>
       <table>
         <tr><th>Tipo</th><th>Carácter</th><th>Buen fit</th></tr>
         <tr><td>hero_ad</td><td>Cinemático, aspiracional</td><td>Lanzamientos, branding</td></tr>
-        <tr><td>ugc</td><td>Crudo, "persona real", cámara en mano</td><td>Redes, performance ads</td></tr>
+        <tr><td>ugc</td><td>Crudo, "persona real", cámara en mano</td><td>Redes, performance</td></tr>
         <tr><td>product_demo</td><td>Claro, muestra función</td><td>E-commerce</td></tr>
         <tr><td>cinematic_ad</td><td>Narrativo, atmósfera</td><td>Historias de marca</td></tr>
         <tr><td>social_vertical</td><td>9:16, rápido, primer segundo decisivo</td><td>Reels / Shorts / TikTok</td></tr>
       </table>`},
     {h:"Por qué se planea por shots", body:`
-      <p>Los modelos de video generan <b>tomas cortas</b> (típicamente unos segundos) con coherencia interna. Un anuncio de 15–30s es la <b>suma de varios shots</b> encadenados. Si no planeas los shots, obtienes clips inconexos: el personaje cambia de cara, el producto cambia de color, la luz salta.</p>
+      <p>Los modelos generan <b>tomas cortas</b>. Dato real verificado en este curso: en el conector, <span class="pill kling">Kling 3.0</span> declara duración <code>3–15s</code> por generación, y <span class="pill flow">Veo</span> entrega clips cortos que luego se extienden. Un anuncio de 15–30s es la <b>suma de varios shots</b> encadenados con continuidad.</p>
       <p>De ahí dos pipelines que NO se mezclan:</p>
       <ul>
-        <li><b>Pipeline de imagen (génesis):</b> crear los assets reutilizables — personaje, producto, locación.</li>
-        <li><b>Pipeline de video (producción):</b> animar esos assets shot por shot con anchors de continuidad.</li>
+        <li><b>Pipeline de imagen (génesis):</b> crear assets reutilizables — personaje, producto, locación.</li>
+        <li><b>Pipeline de video (producción):</b> animar esos assets shot por shot con anchors.</li>
       </ul>`}
   ],
+  sources:[
+    {b:"mcp", t:"Conector Higgsfield — kling3_0: duration 3–15s, modos std/pro/4k (introspección)", u:""},
+    {b:"tut", t:"How Google Flow & Veo 3 rebuild the AI filmmaking workflow (Oreate AI)", u:"https://discover.oreateai.com/discover/how-google-flow-and-veo-3-rebuild-the-ai-filmmaking-workflow"}
+  ],
   quiz:[
-    {q:"¿Cuál es el trabajo de un anuncio?", o:["Verse caro","Mover a una persona hacia una acción","Mostrar lo que puede la IA","Durar lo máximo posible"], a:1, e:"El anuncio existe para provocar una acción, no para lucir tecnología."},
-    {q:"En social_vertical, ¿qué es lo más decisivo?", o:["El último frame","Los créditos","El primer segundo / hook","La duración total"], a:2, e:"En vertical el scroll se gana o se pierde en el primer segundo."},
-    {q:"¿Por qué se planea un anuncio por shots?", o:["Por capricho de AURORA","Porque los modelos generan tomas cortas que hay que encadenar con continuidad","Porque es más barato","Porque la IA no entiende color"], a:1, e:"Cada generación es una toma corta; el anuncio es la suma coherente de varias."},
+    {q:"¿Cuál es el trabajo de un anuncio?", o:["Verse caro","Mover a una persona hacia una acción","Lucir la IA","Durar lo máximo"], a:1, e:"El anuncio existe para provocar una acción."},
+    {q:"En social_vertical lo más decisivo es…", o:["El último frame","Los créditos","El primer segundo / hook","La duración"], a:2, e:"El scroll se gana o pierde en el primer segundo."},
+    {q:"¿Por qué se planea por shots?", o:["Capricho","Porque los modelos generan tomas cortas (p. ej. Kling 3–15s) que se encadenan","Porque es gratis","Porque la IA no entiende color"], a:1, e:"Cada generación es una toma corta; el anuncio las suma con continuidad."},
     {q:"¿Qué NO debes mezclar?", o:["Hook y CTA","Pipeline de imagen (génesis) con pipeline de video (producción)","Audio y video","Marca y producto"], a:1, e:"Génesis de assets y producción de video son pipelines separados."}
   ],
   deliverable:{
@@ -265,7 +300,7 @@ const STAGES = [
     instructions:"Define el norte creativo de tu spot de práctica.",
     fields:[
       {id:"oneliner", type:"textarea", label:"Brief de una línea: ¿qué siente y qué hace el espectador al terminar?"},
-      {id:"output", type:"text", label:"Tipo de output elegido (hero_ad / ugc / product_demo / cinematic_ad / social_vertical)"},
+      {id:"output", type:"text", label:"Tipo de output (hero_ad / ugc / product_demo / cinematic_ad / social_vertical)"},
       {id:"hook", type:"textarea", label:"Idea de hook para los primeros 3 segundos"}
     ]
   }
@@ -280,23 +315,21 @@ const STAGES = [
   ],
   lessons:[
     {h:"Qué valida el gate", body:`
-      <p>AURORA bloquea la producción si falta cualquier campo del brief. Estos son los obligatorios (de <code>video_brief.yaml</code>):</p>
+      <p>AURORA bloquea la producción si falta cualquier campo. Obligatorios (de <code>video_brief.yaml</code> del repo):</p>
       <div class="kv">operator_intent        # qué quieres, en tus palabras
 output_type            # hero_ad | ugc | product_demo | cinematic_ad | social_vertical | ...
 duration_seconds       # entero > 0
-emotional_beat         # la emoción núcleo del spot
+emotional_beat         # la emoción núcleo
 product_or_brand       # qué se anuncia
-core_action            # la acción central que ocurre en pantalla
+core_action            # la acción central en pantalla
 target_audience        # a quién le hablas
 final_frame_description# el cuadro que queda grabado
 audio_strategy         # native_ai | external_track | silent | mixed
 success_criteria[]     # >= 1 criterio medible</div>`},
     {h:"emotional_beat y final_frame", body:`
-      <p><b>emotional_beat</b> no es "que se vea cool". Es una emoción concreta: <i>alivio</i>, <i>orgullo</i>, <i>urgencia</i>, <i>pertenencia</i>. Todo el shot list sirve a ese beat.</p>
-      <p><b>final_frame_description</b> es el cuadro que el espectador recuerda. Descríbelo como una foto: sujeto, producto, composición, luz, texto en pantalla si lo hay. Este frame guía la continuidad inversa de tus shots.</p>
-      <div class="note">Tip: escribe el final_frame ANTES que el resto. Si sabes a dónde llegas, los shots se ordenan solos.</div>`},
+      <p><b>emotional_beat</b> es una emoción concreta: <i>alivio</i>, <i>orgullo</i>, <i>urgencia</i>, <i>pertenencia</i>. <b>final_frame_description</b> es el cuadro que el espectador recuerda — descríbelo como una foto (sujeto, producto, composición, luz, texto en pantalla).</p>
+      <div class="note">Tip operativo: en Kling, el final_frame se convierte literalmente en tu <b>end frame</b> (etapa 6). Escribirlo bien aquí te ahorra trabajo después.</div>`},
     {h:"success_criteria medibles", body:`
-      <p>Un criterio de éxito debe poder verificarse mirando el resultado. Malo: "que quede bonito". Bueno:</p>
       <ul>
         <li>"El logo es legible en el último segundo a 9:16."</li>
         <li>"La cara del personaje es la misma en los 3 shots."</li>
@@ -304,15 +337,18 @@ success_criteria[]     # >= 1 criterio medible</div>`},
         <li>"El hook comunica el beneficio sin texto en menos de 2s."</li>
       </ul>`}
   ],
+  sources:[
+    {b:"off", t:"AURORA — plantilla video_brief.yaml (este repositorio)", u:""}
+  ],
   quiz:[
-    {q:"Si falta 'final_frame_description' en el brief…", o:["No pasa nada","El gate de preproducción bloquea la producción","La IA lo inventa","Se usa el de otro proyecto"], a:1, e:"Falta un campo obligatorio → gate bloquea. Nada de producir."},
-    {q:"¿Cuál es un buen emotional_beat?", o:["'Cinemático'","'4K'","'Orgullo de pertenecer'","'Trending'"], a:2, e:"Una emoción concreta, no un atributo técnico."},
-    {q:"¿Cuál success_criteria es medible?", o:["Que se vea premium","La cara del personaje es idéntica en los 3 shots","Que guste","Algo viral"], a:1, e:"Verificable mirando el resultado."},
-    {q:"¿Por qué conviene escribir el final_frame primero?", o:["Para llenar espacio","Porque guía y ordena los shots hacia un destino claro","Porque lo exige Kling","Por moda"], a:1, e:"Saber el destino ordena toda la secuencia."}
+    {q:"Si falta 'final_frame_description'…", o:["No pasa nada","El gate de preproducción bloquea la producción","La IA lo inventa","Se usa otro"], a:1, e:"Falta un campo obligatorio → gate bloquea."},
+    {q:"¿Buen emotional_beat?", o:["'Cinemático'","'4K'","'Orgullo de pertenecer'","'Trending'"], a:2, e:"Una emoción concreta, no un atributo técnico."},
+    {q:"¿Cuál success_criteria es medible?", o:["Que se vea premium","La cara es idéntica en los 3 shots","Que guste","Algo viral"], a:1, e:"Verificable mirando el resultado."},
+    {q:"El final_frame escrito aquí, en Kling se usa como…", o:["Negative prompt","End frame de la toma","Aspect ratio","Nada"], a:1, e:"El final_frame alimenta el end frame de Kling."}
   ],
   deliverable:{
     title:"Preproduction Packet (brief completo)",
-    instructions:"Completa TODOS los campos. Este es tu gate: un campo vacío = no produces.",
+    instructions:"Completa TODOS los campos. Un campo vacío = no produces.",
     fields:[
       {id:"operator_intent", type:"textarea", label:"operator_intent"},
       {id:"output_type", type:"text", label:"output_type"},
@@ -329,15 +365,15 @@ success_criteria[]     # >= 1 criterio medible</div>`},
 },
 /* 3 */ {
   icon:"3", title:"Génesis de assets: consistencia",
-  lead:"Personaje, producto y locación consistentes. La consistencia se construye ANTES del video, no se reza durante.",
+  lead:"Personaje, producto y locación consistentes. Aquí entran Ingredients (Flow) y Elements / start frame (Kling) — con sus pasos reales.",
   objectives:[
     "Crear un asset de génesis sobre fondo neutro y reutilizable.",
-    "Entender 'Ingredients' (Flow) y 'Elements/referencias' (Kling) como mecanismos de consistencia.",
-    "Escribir un genesis prompt con estructura."
+    "Usar 'Ingredients to Video' (Flow) y 'Elements'/start frame (Kling) para consistencia.",
+    "Proteger el producto (color HEX, negatives)."
   ],
   lessons:[
     {h:"Por qué génesis sobre fondo neutro", body:`
-      <p>AURORA genera el personaje/producto/locación en una imagen <b>limpia, sobre fondo blanco o gris neutro</b>, con prompt agnóstico de escena, para que el elemento sea <b>reutilizable en todas las tomas</b>. Mira el patrón del template real:</p>
+      <p>AURORA genera el elemento en una imagen limpia, <b>fondo blanco/gris neutro</b>, con prompt agnóstico de escena, para reutilizarlo en todas las tomas. Patrón real del repo:</p>
       <div class="kv">SUBJECT: a professional football player, lean muscular build...
 ACTION / POSE: confident hero stance, full body in frame.
 CAMERA / LENS: 85mm lens, full-body shot, slight low angle.
@@ -345,227 +381,312 @@ LIGHTING: soft key light with subtle rim light, neutral temperature.
 PLACEMENT ANCHOR: on a plain seamless white background, no scene.
 STYLE: photoreal, editorial, natural texture, no stylization.
 Negative: blurry, distorted, extra limbs, text, logos, watermark, background</div>`},
-    {h:"Ingredients (Flow) vs Elements/referencias (Kling)", body:`
-      <p>Ambas plataformas tienen un mecanismo para "fijar" un sujeto y que reaparezca igual:</p>
-      <ul>
-        <li><span class="pill flow">Google Flow</span> usa <b>Ingredients</b>: defines personajes/objetos/estilos y los combinas en una toma ("Ingredients to Video"). También tiene "Frames to Video" (primer/último frame).</li>
-        <li><span class="pill kling">Kling</span> usa <b>imagen de referencia / Elements</b> e <b>image-to-video</b>: partes de tu imagen de génesis como primer frame o como referencia de sujeto.</li>
-      </ul>
-      <div class="note">No inventes el nombre exacto del botón ni límites de cantidad: verifica en la versión activa de cada plataforma. Los nombres y cupos cambian entre versiones.</div>`},
+    {h:"Ingredients (Flow): pasos reales", body:`
+      <p><span class="pill flow">Google Flow</span> usa <b>Ingredients to Video</b>: aportas hasta <b>3 imágenes</b> de referencia de una misma persona, personaje o producto, y Veo preserva su apariencia en el video.</p>
+      <ol class="steps">
+        <li>Entra a <span class="ui">labs.google/flow</span> → <span class="ui">New Project</span>.</li>
+        <li>En la caja de prompt (abajo) elige el modo <span class="ui">Ingredients to Video</span>.</li>
+        <li>Sube tus imágenes de génesis (tu personaje/producto sobre fondo neutro) como <b>ingredients</b>.</li>
+        <li>Escribe el prompt de la acción; Veo combina los ingredients manteniendo la apariencia.</li>
+      </ol>`},
+    {h:"Elements / start frame (Kling): pasos reales", body:`
+      <p><span class="pill kling">Kling</span> ofrece <b>Elements Mode</b> (varias imágenes para crear y animar un sujeto consistente) e <b>Image to Video</b> con <b>start frame</b>: tu imagen de génesis como primer cuadro = máxima fidelidad del sujeto/producto.</p>
+      <ol class="steps kl">
+        <li>En <span class="ui">klingai.com</span> → sección de videos, elige <span class="ui">Image to Video</span> (o <span class="ui">Elements</span>).</li>
+        <li>Sube tu génesis en la <b>zona de carga de imagen</b> (será el start frame).</li>
+        <li>En Elements, agrega varias imágenes del mismo sujeto para fijar identidad.</li>
+        <li>Prompt + ajustes (modo, duración, aspect) → generar.</li>
+      </ol>
+      <div class="note">No inventes el nombre exacto del botón ni los cupos: cambian por versión. Verifica en el User Guide oficial de Kling y en el Help de Flow (enlaces abajo).</div>`},
     {h:"El producto es sagrado", body:`
-      <p>En publicidad el <b>producto no puede deformarse</b>: ni el logo, ni el color, ni la forma del empaque. Por eso el producto casi siempre entra como <b>imagen real / génesis controlada</b> (no como texto puro), y se reinyecta como referencia en cada shot. Color como código exacto (HEX) en tu brief y en negative-prompt todo lo que lo altere.</p>`}
+      <p>El producto no puede deformarse (logo, color, forma). Por eso entra como <b>imagen real / génesis controlada</b> (no solo texto) y se reinyecta como ingredient/start frame en cada shot. Color como <b>código HEX</b> en el brief, y todo lo que lo altere va al <b>negative prompt</b>.</p>`}
+  ],
+  sources:[
+    {b:"off", t:"Crear videos en Flow (Text/Frames/Ingredients to Video) — Help oficial", u:"https://support.google.com/flow/answer/16353334"},
+    {b:"off", t:"Veo 3.1 — referencia de hasta 3 imágenes (Ingredients) — Google Developers Blog", u:"https://developers.googleblog.com/introducing-veo-3-1-and-new-creative-capabilities-in-the-gemini-api/"},
+    {b:"off", t:"Kling — User Guide oficial (Elements / Image to Video)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"},
+    {b:"tut", t:"Kling AI paso a paso para principiantes (SuperbCrew)", u:"https://www.superbcrew.com/how-to-use-kling-ai-step-by-step-guide-for-beginners/"}
   ],
   quiz:[
-    {q:"¿Por qué se genera el asset sobre fondo neutro?", o:["Porque es más barato","Para que sea reutilizable en cualquier escena","Porque la IA no hace fondos","Por estética minimalista"], a:1, e:"Fondo neutro = elemento agnóstico de escena, reutilizable."},
-    {q:"En Google Flow, el mecanismo para fijar personajes/objetos se llama…", o:["Motion Brush","Ingredients","Lip Sync","Render Farm"], a:1, e:"Flow combina 'Ingredients' en la toma."},
-    {q:"Para que el producto no se deforme, conviene…", o:["Describirlo solo con texto","Entrarlo como imagen real/génesis y reinyectarlo como referencia","Dejar que la IA improvise","Subir la resolución"], a:1, e:"Imagen controlada + referencia por shot + HEX + negatives protegen el producto."},
-    {q:"Sobre los nombres de funciones de cada plataforma, AURORA dice:", o:["Invéntalos si no los sabes","Verifica en la versión activa, no inventes","Usa los de hace dos años","Da igual"], a:1, e:"No inventar capabilities: verificar siempre."}
+    {q:"¿Por qué génesis sobre fondo neutro?", o:["Más barato","Para reutilizar el elemento en cualquier escena","La IA no hace fondos","Estética"], a:1, e:"Fondo neutro = elemento agnóstico de escena, reutilizable."},
+    {q:"En Flow, 'Ingredients to Video' acepta hasta…", o:["1 imagen","3 imágenes de referencia de un sujeto","10 imágenes","ilimitadas"], a:1, e:"Veo 3.1 admite hasta 3 imágenes de referencia (ingredients)."},
+    {q:"En Kling, para máxima fidelidad del sujeto usas…", o:["Solo texto","Tu imagen de génesis como start frame (Image to Video) o Elements","Negative prompt","Upscale"], a:1, e:"Start frame / Elements fijan la identidad desde una imagen real."},
+    {q:"Para que el producto no se deforme conviene…", o:["Describirlo solo con texto","Entrarlo como imagen real y reinyectarlo (ingredient/start frame) + HEX + negatives","Improvisar","Subir resolución"], a:1, e:"Imagen controlada + reinyección + HEX + negatives protegen el producto."}
   ],
   deliverable:{
-    title:"Genesis prompts de tus assets",
-    instructions:"Escribe el prompt de génesis (fondo neutro) de tus elementos clave.",
+    title:"Genesis prompts + plan de reinyección",
+    instructions:"Escribe el prompt de génesis (fondo neutro) y di cómo reinyectarás consistencia en cada plataforma.",
     fields:[
-      {id:"character", type:"textarea", label:"Personaje / talento (SUBJECT, POSE, CAMERA, LIGHTING, PLACEMENT, STYLE, Negative)"},
-      {id:"product", type:"textarea", label:"Producto (incluye color HEX exacto y negatives que protegen logo/forma)"},
-      {id:"location", type:"textarea", label:"Locación / backdrop (si aplica)"},
-      {id:"refmethod", type:"text", label:"¿Cómo reinyectarás consistencia? (Flow Ingredients / Kling referencia o I2V)"}
+      {id:"character", type:"textarea", label:"Personaje/talento (SUBJECT, POSE, CAMERA, LIGHTING, PLACEMENT, STYLE, Negative)"},
+      {id:"product", type:"textarea", label:"Producto (color HEX exacto + negatives que protegen logo/forma)"},
+      {id:"location", type:"textarea", label:"Locación/backdrop (si aplica)"},
+      {id:"flowref", type:"text", label:"Plan en Flow: ¿qué imágenes usarás como Ingredients (máx 3)?"},
+      {id:"klingref", type:"text", label:"Plan en Kling: ¿start frame / Elements? ¿qué imagen(es)?"}
     ]
   }
 },
 /* 4 */ {
   icon:"4", title:"Anatomía del prompt de video",
-  lead:"La estructura MCSLA y cómo cambia entre Flow/Veo y Kling. Construir el prompt, no improvisarlo.",
+  lead:"Estructura repetible del prompt y cómo cambia el énfasis entre Flow/Veo y Kling, con vocabulario real de cada una.",
   objectives:[
-    "Aplicar una estructura repetible al prompt de video.",
-    "Diferenciar el énfasis de prompt entre Flow/Veo y Kling.",
-    "Pasar el prompt por un 'linter mental': sin redundancia, con negative."
+    "Aplicar una estructura repetible al prompt.",
+    "Diferenciar el prompting de Veo (descriptivo + audio) y Kling (movimiento + frames).",
+    "Usar bien el campo negative prompt de cada plataforma."
   ],
   lessons:[
-    {h:"Estructura MCSLA", body:`
-      <p>AURORA construye prompts con secciones claras. Una plantilla útil para video:</p>
-      <div class="kv">[SUJETO]      quién/qué (idealmente referenciado a tu génesis)
-[ACCIÓN]      el movimiento concreto y su física
-[CÁMARA]      lente, ángulo, movimiento (pan/dolly/handheld/static)
+    {h:"Estructura base (MCSLA)", body:`
+      <div class="kv">[SUJETO]   quién/qué (referenciado a tu génesis / ingredient / start frame)
+[ACCIÓN]   el movimiento concreto y su física
+[CÁMARA]   lente, ángulo, movimiento
 [LUZ/ESTILO]  temperatura, mood, look
-[AUDIO]       diálogo/SFX/ambiente (clave en Flow/Veo)
-[NEGATIVE]    lo que NO quieres (morphing, manos extra, texto, logos)</div>
-      <p><b>Anti-redundancia (regla del linter):</b> si una referencia ya carga una categoría (pose, outfit, locación, prop, estilo), <b>no la vuelvas a describir</b> en el cuerpo. Re-describir confunde al modelo. El contexto de movimiento ("explota fuera de los bloques") sí va; es acción, no descriptor estático.</p>`},
-    {h:"Flow/Veo vs Kling: énfasis distinto", body:`
-      <table>
-        <tr><th>Aspecto</th><th class="pill flow">Flow / Veo</th><th class="pill kling">Kling</th></tr>
-        <tr><td>Fuerte en</td><td>Prompts descriptivos largos + <b>audio nativo</b> (diálogo/SFX)</td><td>Movimiento/física, control fino con <b>start/end frame</b> y motion</td></tr>
-        <tr><td>Consistencia</td><td>Ingredients</td><td>Imagen de referencia / I2V / Elements</td></tr>
-        <tr><td>Diálogo</td><td>Lo genera el modelo (audio nativo)</td><td>A menudo vía función de lip-sync sobre el clip</td></tr>
-        <tr><td>Control de toma</td><td>Scene builder, camera controls, extend</td><td>Start+end frame, motion brush, modo profesional</td></tr>
-      </table>
-      <div class="note acc">Por eso en Flow inviertes en <b>describir y dirigir audio</b>; en Kling inviertes en <b>frames ancla y control de movimiento</b>. Mismo brief, prompt adaptado a la plataforma.</div>`},
+[AUDIO]    diálogo/SFX/ambiente (clave en Veo)
+[NEGATIVE] lo que NO quieres (morphing, manos extra, texto, logos)</div>
+      <p><b>Anti-redundancia:</b> si una referencia ya carga una categoría (pose, outfit, locación, prop, estilo), <b>no la re-describas</b> en el cuerpo. El contexto de movimiento sí va; es acción, no descriptor estático.</p>`},
+    {h:"Veo (Flow): descriptivo + audio nativo", body:`
+      <p>Guía oficial de Veo: di <b>quién habla, qué dice, cómo lo dice, qué suena alrededor</b>. Fórmula real para diálogo: <i>descripción del personaje + acción + diálogo entre comillas</i>, con modificadores de tono.</p>
+      <div class="kv">A young barista, smiling, slides the cup forward and
+says warmly: "Tu momento empieza aquí."
+SFX: crisp espresso machine hiss as she turns the cup.
+Ambient: low café murmur (background), soft jazz (faint).
+Negative: distorted hands, text overlay, watermark.</div>
+      <ul>
+        <li>Diálogo <b>corto</b> (≈ &lt; 8s / una línea) para evitar desincronía.</li>
+        <li>Liga SFX a la acción con <b>"as" / "when"</b>.</li>
+        <li>Ambiente por capas: foreground / midground / background.</li>
+      </ul>`},
+    {h:"Kling: movimiento + frames + sliders", body:`
+      <p>En <span class="pill kling">Kling</span> el prompt apoya al control visual: <b>start/end frame</b> y movimiento. El panel real incluye:</p>
+      <ul>
+        <li><b>Negative prompt</b> — campo dedicado.</li>
+        <li><b>Creativity / Relevance</b> — slider entre obediencia al prompt y libertad del modelo.</li>
+        <li><b>Camera Movement</b> — vocabulario fijo (etapa 6).</li>
+      </ul>
+      <div class="note kl">Mismo brief, prompt adaptado: en Veo inviertes en <b>describir y dirigir audio</b>; en Kling inviertes en <b>frames ancla, slider y control de movimiento</b>.</div>`},
     {h:"El negative no es opcional", body:`
-      <p>Todo prompt de video publicitario debe llevar un <b>bloque negative</b>. Mínimos recomendados: <code>morphing</code>, <code>deformed hands</code>, <code>extra limbs</code>, <code>flicker</code>, <code>text</code>, <code>logos</code>, <code>watermark</code>, y todo lo que altere tu producto. Sin negative, el modelo "rellena" con basura.</p>`}
+      <p>Mínimos para anuncios: <code>morphing</code>, <code>deformed hands</code>, <code>extra limbs</code>, <code>flicker</code>, <code>text</code>, <code>logos</code>, <code>watermark</code>, y todo lo que altere tu producto. Kling tiene <b>campo negative</b> propio; en Veo se incluye como instrucción negativa en el prompt.</p>`}
+  ],
+  sources:[
+    {b:"off", t:"DeepMind — Guía oficial de prompting de Veo", u:"https://deepmind.google/models/veo/prompt-guide/"},
+    {b:"off", t:"Google Cloud — Ultimate prompting guide for Veo 3.1", u:"https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-veo-3-1"},
+    {b:"tut", t:"Kling AI Prompt Guide — cámara y negative prompts (Ambience AI)", u:"https://www.ambienceai.com/tutorials/kling-prompting-guide"},
+    {b:"tut", t:"Veo 3 Native Audio Prompt Guide (diálogo, SFX, lip sync)", u:"https://www.veo3ai.io/blog/veo-3-native-audio-prompt-guide-2026"}
   ],
   quiz:[
-    {q:"Si tu referencia ya define el outfit, en el cuerpo del prompt debes…", o:["Volver a describirlo con más detalle","No volver a describirlo (anti-redundancia)","Describir solo el color","Ignorar la referencia"], a:1, e:"Re-describir una categoría ya cargada por la referencia es FAIL en el linter."},
-    {q:"¿En qué destaca Flow/Veo respecto a Kling?", o:["Motion brush","Audio nativo (diálogo/SFX) y prompts descriptivos","Start/end frame","Modo profesional"], a:1, e:"Veo genera audio nativo; Flow brilla en dirección descriptiva + sonido."},
-    {q:"Kling es especialmente fuerte para…", o:["Audio nativo","Control de movimiento y frames ancla (start/end)","Generar logos","Edición de texto"], a:1, e:"Kling enfatiza física/movimiento y control con frames y motion."},
-    {q:"El bloque negative en un anuncio es…", o:["Opcional","Obligatorio: evita morphing, manos extra, texto, daño al producto","Solo para retratos","Decorativo"], a:1, e:"Sin negative el modelo rellena con artefactos."}
+    {q:"Si tu referencia ya define el outfit, en el cuerpo del prompt…", o:["Lo describes con más detalle","No lo re-describes (anti-redundancia)","Solo el color","Ignoras la referencia"], a:1, e:"Re-describir una categoría ya cargada confunde al modelo."},
+    {q:"Fórmula oficial de Veo para diálogo:", o:["Solo el texto","Descripción del personaje + acción + diálogo entre comillas","Negative prompt","Aspect ratio"], a:1, e:"Personaje + acción + diálogo entrecomillado, con tono."},
+    {q:"El slider Creativity/Relevance de Kling controla…", o:["El audio","El equilibrio entre obediencia al prompt y libertad del modelo","La duración","El color"], a:1, e:"Es el balance prompt-adherence vs creatividad."},
+    {q:"El negative prompt en un anuncio…", o:["Es opcional","Es obligatorio: morphing, manos, texto, daño al producto (campo propio en Kling)","Solo retratos","Decorativo"], a:1, e:"Sin negative el modelo rellena con artefactos."}
   ],
   deliverable:{
-    title:"Prompt MCSLA para un shot, en ambas plataformas",
-    instructions:"Toma UN shot de tu spot y escríbelo adaptado a cada plataforma.",
+    title:"Prompt de un shot, en ambas plataformas",
+    instructions:"Toma UN shot y escríbelo adaptado a cada plataforma.",
     fields:[
-      {id:"shotdesc", type:"text", label:"¿Qué shot es? (ej: hero close-up del producto girando)"},
-      {id:"flowprompt", type:"textarea", label:"Versión Flow/Veo (incluye dirección de audio nativo)"},
-      {id:"klingprompt", type:"textarea", label:"Versión Kling (apóyate en start/end frame y control de movimiento)"},
-      {id:"negative", type:"textarea", label:"Bloque negative (compartido)"}
+      {id:"shotdesc", type:"text", label:"¿Qué shot es?"},
+      {id:"flowprompt", type:"textarea", label:"Versión Veo/Flow (incluye dirección de audio: diálogo entre comillas, SFX ligado a acción, ambiente por capas)"},
+      {id:"klingprompt", type:"textarea", label:"Versión Kling (apóyate en start/end frame, camera movement y slider)"},
+      {id:"negative", type:"textarea", label:"Negative prompt (úsalo en el campo de Kling y como instrucción en Veo)"}
     ]
   }
 },
 /* 5 */ {
-  icon:"5", title:"Google Flow / Veo en profundidad",
-  lead:"Ingredients, Frames to Video, Scene Builder, controles de cámara, audio nativo y extend.",
+  icon:"5", title:"Google Flow / Veo — interfaz real",
+  lead:"Recorrido clic a clic: acceso, los tres modos, ajustes, controles de cámara, Scenebuilder (Jump to / Extend) y audio nativo.",
   objectives:[
-    "Elegir el modo correcto de Flow para tu shot.",
-    "Dirigir audio nativo de Veo dentro del prompt.",
-    "Usar Scene Builder y extend para encadenar tomas."
+    "Navegar Flow: proyecto, caja de prompt, ajustes.",
+    "Elegir entre Text / Frames / Ingredients to Video.",
+    "Usar camera controls, Jump to y Extend; entender planes y créditos."
   ],
   lessons:[
-    {h:"Los modos de Flow", body:`
-      <p><span class="pill flow">Google Flow</span> es la herramienta de cine con IA de Google, apoyada en los modelos <b>Veo</b> (video) e <b>Imagen</b> (imagen). Modos típicos:</p>
+    {h:"Qué es Flow y cómo entrar", body:`
+      <p><span class="pill flow">Google Flow</span> es la herramienta de cine con IA de Google Labs, construida sobre <b>Veo</b> (video), <b>Imagen</b> (imagen) y <b>Gemini</b>. Veo 3.1 genera en <b>720p/1080p/4K</b> con <b>audio nativo</b>.</p>
+      <ol class="steps">
+        <li>Ve a <span class="ui">labs.google/flow</span> e inicia sesión con tu cuenta de Google.</li>
+        <li>Clic en <span class="ui">New Project</span>.</li>
+        <li>La <b>caja de prompt</b> está abajo; el lienzo del proyecto guarda tus clips y prompts.</li>
+      </ol>`},
+    {h:"Los tres modos (en la caja de prompt)", body:`
       <ul>
-        <li><b>Text to Video</b> — describes la toma; útil para explorar.</li>
-        <li><b>Frames to Video</b> — das primer (y/o último) frame; control de composición y continuidad.</li>
-        <li><b>Ingredients to Video</b> — combinas elementos definidos (personaje, objeto, estilo) para mantenerlos consistentes.</li>
-      </ul>`},
-    {h:"Audio nativo: la ventaja de Veo", body:`
-      <p>Veo puede generar <b>audio nativo</b>: diálogo, efectos y ambiente sincronizados con la imagen. Esto cambia cómo escribes el prompt: además de lo visual, <b>diriges el sonido</b>.</p>
-      <div class="kv">Ejemplo de dirección de audio en el prompt:
-"...she opens the can; crisp metallic pop SFX,
-soft fizz, ambient café murmur. She says, warmly:
-'Por fin, mi momento.' Subtle upbeat bed underneath."</div>
-      <div class="note">El diálogo entre comillas tiende a renderizarse como habla. Manténlo corto y natural para evitar desincronía. Verifica idioma/acento en la plataforma.</div>`},
-    {h:"Scene Builder, cámara y extend", body:`
-      <p><b>Scene Builder</b> te deja organizar y encadenar clips de una secuencia; <b>extend</b> alarga una toma continuando el movimiento; los <b>controles de cámara</b> dirigen ángulos/movimientos. Para un anuncio: genera shots cortos sólidos y encadénalos cuidando que el <b>último frame de uno alimente el primero del siguiente</b> (esto lo profundizamos en continuidad).</p>
-      <div class="note acc">Flow funciona con <b>créditos</b> dentro de planes de Google. No inventes precios ni cuotas: revísalos en tu cuenta. Genera en borrador antes de gastar en variantes finales.</div>`}
+        <li><span class="ui">Text to Video</span> — describes la toma. Para explorar.</li>
+        <li><span class="ui">Frames to Video</span> — defines <b>primer y/o último frame</b>: transiciones, animar una imagen, o que el clip empiece y termine en imágenes dadas.</li>
+        <li><span class="ui">Ingredients to Video</span> — combinas hasta <b>3</b> imágenes de un sujeto para mantenerlo consistente.</li>
+      </ul>
+      <p>Ajustes (icono de <span class="ui">settings</span> arriba a la derecha de la caja): <b>Model</b>, <b>Aspect ratio</b> y <b>Number of outputs</b>.</p>`},
+    {h:"Cámara, Jump to y Extend (Scenebuilder)", body:`
+      <p>En la caja de prompt verás un <b>icono de cámara</b> con controles: <b>pan/tilt</b> (rotación horizontal/vertical), <b>dolly/truck</b> (desplazamiento físico) y <b>zoom</b> (focal).</p>
+      <p>Para construir la narrativa de varias tomas:</p>
+      <ol class="steps">
+        <li><span class="ui">Add</span> → <span class="ui">Jump to…</span> + un prompt corto (ej: "She runs through the forest"): salta a un nuevo beat.</li>
+        <li><span class="ui">Add</span> → <span class="ui">Extend…</span> + prompt de cómo continúa la acción: <b>extiende</b> el clip generando nuevos frames a partir del <b>último segundo</b> del clip previo (puedes llegar a un minuto o más).</li>
+      </ol>
+      <div class="note acc">El Extend basado en "el último segundo del clip previo" es tu mejor amigo de continuidad dentro de Flow (lo conectamos con anchors en la etapa 7).</div>`},
+    {h:"Audio nativo de Veo", body:`
+      <p>Ventaja diferencial: Veo genera <b>audio nativo</b> (diálogo, SFX, ambiente). El prompt también dirige el sonido (lo viste en la etapa 4). Mantén una línea de diálogo, un SFX principal y un lecho ambiente: lo simple suena mejor.</p>`},
+    {h:"Planes y créditos (verifica el tuyo)", body:`
+      <p>Flow se incluye en suscripciones de Google AI. <b>Google AI Pro</b> da acceso; <b>Google AI Ultra</b> ofrece límites más altos y acceso temprano a funciones avanzadas. Funciona con <b>créditos</b> por generación.</p>
+      <div class="note">Precios y cuotas cambian por país y fecha. <b>No los inventes</b>: confírmalos en tu cuenta y en el Help oficial. Genera en outputs bajos antes de gastar en variantes finales.</div>`}
+  ],
+  sources:[
+    {b:"off", t:"Crear videos en Flow — Help oficial (modos, ajustes, Jump to / Extend)", u:"https://support.google.com/flow/answer/16353334"},
+    {b:"off", t:"Flow — modelos y funciones soportadas (Help oficial)", u:"https://support.google.com/labs/answer/16352836"},
+    {b:"off", t:"Google Flow — página del producto (Labs)", u:"https://labs.google/fx/tools/flow"},
+    {b:"off", t:"Veo 3.1 — DeepMind (capacidades, resoluciones, audio)", u:"https://deepmind.google/models/veo/"},
+    {b:"tut", t:"How to use Google Flow — Tom's Guide (walkthrough)", u:"https://www.tomsguide.com/ai/google-gemini/how-to-use-google-flow-the-new-ai-video-generator-meant-for-filmmakers"},
+    {b:"tut", t:"Flow camera controls — 15 prompts cinemáticos (DigiWebInsight)", u:"https://digiwebinsight.com/flow-camera-controls-explained/"}
   ],
   quiz:[
-    {q:"¿Sobre qué modelos se apoya Google Flow?", o:["Kling y Sora","Veo (video) e Imagen (imagen)","Solo Imagen","Runway"], a:1, e:"Flow usa Veo para video e Imagen para imágenes."},
-    {q:"Para mantener un personaje consistente entre tomas en Flow usas…", o:["Text to Video","Ingredients","Negative prompt","Upscale"], a:1, e:"Ingredients fija y reutiliza elementos."},
-    {q:"La gran ventaja de Veo frente a muchos modelos es…", o:["Que no usa créditos","El audio nativo (diálogo/SFX sincronizados)","Que no necesita prompt","Render infinito"], a:1, e:"Veo genera audio nativo; el prompt también dirige sonido."},
-    {q:"El diálogo en el prompt de Veo conviene que sea…", o:["Muy largo y técnico","Corto y natural, entre comillas","Solo en inglés siempre","Inexistente"], a:1, e:"Corto y natural reduce desincronía; verifica idioma en plataforma."},
-    {q:"Sobre precios y cuotas de Flow, debes…", o:["Inventarlos","Revisarlos en tu cuenta, no inventarlos","Asumir que es gratis","Copiarlos de un blog viejo"], a:1, e:"No inventar capabilities ni costos: verifica en tu plan."}
+    {q:"Flow se apoya en…", o:["Kling y Sora","Veo (video), Imagen (imagen) y Gemini","Solo Imagen","Runway"], a:1, e:"Modelos de Google DeepMind dentro de Flow."},
+    {q:"Para empezar y terminar el clip en imágenes dadas usas el modo…", o:["Text to Video","Frames to Video","Ingredients to Video","Extend"], a:1, e:"Frames to Video define primer/último frame."},
+    {q:"En la caja de prompt, ¿dónde ajustas Model, Aspect ratio y Number of outputs?", o:["En el icono de cámara","En el icono de settings (arriba a la derecha de la caja)","En Flow TV","No se puede"], a:1, e:"El engranaje de la caja de prompt."},
+    {q:"Extend genera el nuevo clip a partir de…", o:["El primer frame del proyecto","El último segundo del clip previo","Una imagen random","El audio"], a:1, e:"Extend continúa desde el último segundo: clave de continuidad."},
+    {q:"Sobre precios/cuotas de Flow debes…", o:["Inventarlos","Verificarlos en tu cuenta y el Help oficial","Asumir gratis","Copiar un blog viejo"], a:1, e:"No inventar: verificar siempre."}
   ],
   deliverable:{
-    title:"Plan de toma en Flow + dirección de audio",
-    instructions:"Planea una toma real para Flow.",
+    title:"Plan de producción en Flow",
+    instructions:"Planea una toma o secuencia real para Flow.",
     fields:[
-      {id:"mode", type:"text", label:"Modo de Flow elegido (Text / Frames / Ingredients to Video) y por qué"},
-      {id:"ingredients", type:"textarea", label:"Ingredients que usarás (personaje, producto, estilo)"},
-      {id:"audio", type:"textarea", label:"Dirección de audio nativo (SFX, ambiente, diálogo corto entre comillas)"},
-      {id:"camera", type:"text", label:"Movimiento/ángulo de cámara"}
+      {id:"mode", type:"text", label:"Modo elegido (Text / Frames / Ingredients to Video) y por qué"},
+      {id:"settings", type:"text", label:"Ajustes: model, aspect ratio, number of outputs"},
+      {id:"camera", type:"text", label:"Controles de cámara que usarás (pan/tilt/dolly/truck/zoom)"},
+      {id:"scenebuilder", type:"textarea", label:"Plan Scenebuilder: dónde usarás Jump to y dónde Extend"},
+      {id:"audio", type:"textarea", label:"Dirección de audio nativo (diálogo entre comillas + SFX ligado a acción + ambiente)"}
     ]
   }
 },
 /* 6 */ {
-  icon:"6", title:"Kling en profundidad",
-  lead:"Image-to-video, start/end frame, motion brush, controles de cámara, lip-sync y modo profesional.",
+  icon:"6", title:"Kling — interfaz real",
+  lead:"Recorrido clic a clic: acceso, T2V/I2V, modos std/pro/4K, start/end frame, camera movement, motion brush, Elements, lip sync y extend.",
   objectives:[
-    "Usar start frame + end frame para controlar el arco de la toma.",
-    "Saber cuándo usar motion brush y modo profesional.",
-    "Planear lip-sync y referencias de sujeto."
+    "Navegar el workspace de Kling y su panel de ajustes.",
+    "Usar start + end frame, los 6 controles de cámara y el motion brush (hasta 6 regiones).",
+    "Saber cuándo usar Pro/4K, Elements y lip sync."
   ],
   lessons:[
-    {h:"Image-to-video y frames ancla", body:`
-      <p><span class="pill kling">Kling</span> brilla partiendo de <b>imágenes</b>. Dos palancas clave:</p>
+    {h:"Acceso y workspace", body:`
+      <p><span class="pill kling">Kling</span> (de Kuaishou) vive en <span class="ui">klingai.com</span> / <span class="ui">app.klingai.com</span>. Registro con email o Google. El workspace tiene: <b>caja de prompt central</b>, <b>zona de carga de media</b>, <b>panel de ajustes</b> (aspect ratio, duración, calidad) y <b>botón de generar</b>.</p>
+      <p>Dato real del conector (introspección de <code>kling3_0</code>): modos <code>std / pro / 4k</code>, <code>sound on/off</code>, roles de media <code>start_image</code> y <code>end_image</code>, aspect <code>16:9 / 9:16 / 1:1</code>, duración <code>3–15s</code>.</p>`},
+    {h:"Modos y ajustes", body:`
       <ul>
-        <li><b>Start frame</b> — tu imagen de génesis como primer cuadro: máxima fidelidad del sujeto/producto.</li>
-        <li><b>End frame (tail)</b> — defines también el último cuadro; el modelo interpola el movimiento entre ambos. Ideal para anuncios: controlas a dónde llega la toma (tu final_frame).</li>
+        <li><span class="ui">Text to Video</span> vs <span class="ui">Image to Video</span>.</li>
+        <li>Calidad: <b>Standard/Draft</b> (rápido, menos créditos) · <b>Professional/Pro</b> (1080p, 30fps) · <b>4K</b> (Kling 3.0).</li>
+        <li><b>Duración</b>: típicamente <b>5s o 10s</b> por clip (el conector reporta 3–15s según versión).</li>
+        <li><b>Aspect ratio</b>: 16:9 (YouTube), 1:1 (post IG), 9:16 (TikTok/Stories).</li>
+        <li><b>Negative prompt</b> y slider <b>Creativity/Relevance</b>.</li>
       </ul>
-      <div class="note acc">start+end frame = control del arco completo de la toma. Es la forma más confiable de "aterrizar" en tu final_frame planeado.</div>`},
-    {h:"Motion brush, cámara y modo pro", body:`
+      <div class="note kl">Usa Standard/Draft para explorar barato; Pro/4K para tomas finales.</div>`},
+    {h:"Start frame + End (tail) frame", body:`
+      <p>La palanca estrella para anuncios: controlar el <b>arco completo</b> de la toma.</p>
+      <ol class="steps kl">
+        <li>En <span class="ui">Image to Video</span>, sube tu génesis como <b>start frame</b> (primer cuadro).</li>
+        <li>Activa <b>end frame / tail frame</b> y sube el cuadro final (tu final_frame de la etapa 2).</li>
+        <li>Kling <b>interpola</b> el movimiento entre ambos: aterrizas exactamente donde planeaste.</li>
+      </ol>`},
+    {h:"Camera movement (6 controles) y Motion Brush", body:`
+      <p><b>Camera Movement</b> soporta seis movimientos: <b>horizontal, vertical, zoom, pan, tilt, roll</b> (disponibilidad según modo/versión).</p>
+      <p><b>Motion Brush</b>: pintas trayectorias de movimiento sobre <b>hasta 6 regiones independientes</b> y marcas otras como <b>estáticas</b>; admite auto-segmentación. Ideal para inserts de producto (solo el líquido se mueve, el resto quieto).</p>`},
+    {h:"Elements, Lip Sync y Extend", body:`
       <ul>
-        <li><b>Motion brush</b> — pintas una región y diriges su movimiento (ej: solo el líquido se mueve, el resto quieto). Útil para inserts de producto.</li>
-        <li><b>Controles de cámara</b> — movimientos dirigidos (push in, orbit, etc.).</li>
-        <li><b>Modo profesional / estándar</b> — mayor control/calidad vs velocidad. Usa pro para tomas finales, estándar para explorar.</li>
+        <li><b>Elements Mode</b> — varias imágenes para crear/animar un sujeto consistente.</li>
+        <li><b>Lip Sync</b> — Kling 3.0 "Omni" trae audio nativo con lip sync; también puedes aplicar lip-sync (texto o audio) sobre un clip.</li>
+        <li><b>Extend</b> — continúa el video más allá del clip inicial (hasta varios minutos según versión).</li>
       </ul>
-      <div class="note">Los nombres exactos y la disponibilidad cambian por versión de Kling (1.x, 2.x...). Verifica qué ofrece tu versión antes de prometer una capability.</div>`},
-    {h:"Lip-sync y referencia de sujeto", body:`
-      <p>El <b>diálogo</b> en Kling suele resolverse con su función de <b>lip-sync</b> aplicada sobre el clip (texto a voz o audio que subes), no como audio nativo del prompt. Para mantener una cara consistente, apóyate en <b>referencia de sujeto / Elements</b> e I2V desde tu génesis.</p>
-      <p>Flujo típico para un shot hablado en Kling: génesis del personaje → I2V con start (y end) frame → lip-sync con el guion → revisar manos/boca.</p>`}
+      <div class="note">Nombres y disponibilidad cambian entre versiones (1.x, 2.x, 3.0). Verifica en el User Guide oficial y la guía de cámara (enlaces abajo) antes de prometer una capability.</div>`}
+  ],
+  sources:[
+    {b:"off", t:"Kling — User Guide oficial (app.klingai.com)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"},
+    {b:"off", t:"Kling — Guía oficial de control de cámara (6 movimientos)", u:"https://kling.ai/quickstart/ai-camera-control-guide"},
+    {b:"off", t:"Kling — API Image to Video (parámetros oficiales)", u:"https://app.klingai.com/global/dev/document-api/apiReference/model/imageToVideo"},
+    {b:"mcp", t:"Conector Higgsfield — kling3_0: modes std/pro/4k, start_image+end_image, sound on/off, 3–15s", u:""},
+    {b:"tut", t:"Kling 3.0 Start & End Frame Tutorial (Tona.AI)", u:"https://tonaai.io/blog/kling-3-start-end-frame-tutorial"},
+    {b:"tut", t:"Cómo usar el Motion Brush de Kling (Pollo AI)", u:"https://pollo.ai/hub/how-to-use-kling-ai-motion-brush"},
+    {b:"tut", t:"Kling AI paso a paso para principiantes (SuperbCrew)", u:"https://www.superbcrew.com/how-to-use-kling-ai-step-by-step-guide-for-beginners/"}
   ],
   quiz:[
-    {q:"¿Qué te da usar start frame + end frame en Kling?", o:["Audio nativo","Control del arco completo de la toma (de dónde sale y a dónde llega)","Más créditos","Texto en pantalla"], a:1, e:"El modelo interpola entre ambos frames: controlas el destino (tu final_frame)."},
-    {q:"Motion brush sirve para…", o:["Generar audio","Dirigir el movimiento de una región específica","Subir resolución","Traducir el prompt"], a:1, e:"Pintas una zona y controlas su movimiento; ideal para inserts de producto."},
-    {q:"El diálogo en Kling normalmente se logra con…", o:["Audio nativo del prompt","La función de lip-sync sobre el clip","Motion brush","End frame"], a:1, e:"Lip-sync se aplica al clip; no es audio nativo del prompt como en Veo."},
-    {q:"Para una toma final de máxima calidad en Kling usas…", o:["Modo estándar","Modo profesional","Sin start frame","Solo texto"], a:1, e:"Pro para finales; estándar para explorar rápido."},
-    {q:"Sobre nombres y disponibilidad de funciones entre versiones de Kling:", o:["Son idénticos siempre","Cambian por versión; verifica antes de prometer","No existen","Los define AURORA"], a:1, e:"Verifica tu versión: no inventar capabilities."}
+    {q:"¿Qué te da usar start frame + end frame en Kling?", o:["Audio nativo","Control del arco completo: de dónde sale y a dónde llega (interpola)","Más créditos","Texto en pantalla"], a:1, e:"Kling interpola entre ambos frames: aterrizas en tu final_frame."},
+    {q:"Camera Movement de Kling soporta…", o:["Solo zoom","horizontal, vertical, zoom, pan, tilt, roll","Solo pan y tilt","Ninguno"], a:1, e:"Seis controles de cámara, según modo/versión."},
+    {q:"Motion Brush permite dirigir…", o:["1 región","Hasta 6 regiones independientes (y marcar estáticas)","Solo el fondo","El audio"], a:1, e:"Hasta 6 regiones con trayectorias; otras estáticas."},
+    {q:"Para una toma final de máxima calidad usas el modo…", o:["Standard/Draft","Professional/Pro o 4K","Sin start frame","Solo texto"], a:1, e:"Pro/4K para finales; Standard/Draft para explorar."},
+    {q:"Según la introspección del conector, kling3_0 acepta roles de media…", o:["solo image","start_image y end_image","solo end_image","ninguno"], a:1, e:"Confirmado vía conector: start_image + end_image."}
   ],
   deliverable:{
-    title:"Plan de toma en Kling con frames ancla",
-    instructions:"Planea una toma real para Kling.",
+    title:"Plan de producción en Kling",
+    instructions:"Planea una toma real para Kling con sus controles.",
     fields:[
-      {id:"startframe", type:"textarea", label:"Start frame: ¿qué imagen de génesis usas y por qué?"},
-      {id:"endframe", type:"textarea", label:"End frame: describe el cuadro final al que debe llegar la toma"},
-      {id:"motion", type:"text", label:"¿Usarás motion brush / control de cámara? ¿Para qué región o movimiento?"},
-      {id:"dialogue", type:"text", label:"¿Hay diálogo? Plan de lip-sync (o 'sin diálogo')"}
+      {id:"mode", type:"text", label:"Modo (T2V/I2V) y calidad (Standard/Pro/4K) + por qué"},
+      {id:"startframe", type:"textarea", label:"Start frame: ¿qué génesis usas?"},
+      {id:"endframe", type:"textarea", label:"End frame: el cuadro final (tu final_frame)"},
+      {id:"camera", type:"text", label:"Camera movement elegido (horizontal/vertical/zoom/pan/tilt/roll)"},
+      {id:"motion", type:"text", label:"¿Motion Brush? ¿qué regiones mueves y cuáles dejas estáticas?"},
+      {id:"dialogue", type:"text", label:"¿Diálogo? Plan de lip sync (o 'sin diálogo')"}
     ]
   }
 },
 /* 7 */ {
   icon:"7", title:"Continuidad multishot & anchors",
-  lead:"Cómo encadenar shots sin que el personaje, el producto o la luz salten. El corazón de un anuncio coherente.",
+  lead:"Encadenar shots sin saltos, usando las funciones reales: Extend/Jump to (Flow) y last→start frame (Kling).",
   objectives:[
     "Aplicar una case_type de anchor por shot.",
-    "Usar el último frame de un clip como ancla del siguiente.",
-    "Definir una estrategia de continuidad por toda la secuencia."
+    "Usar Extend de Flow y la técnica último→primer frame de Kling.",
+    "Definir una estrategia de continuidad de toda la secuencia."
   ],
   lessons:[
-    {h:"Anchor por shot (los case types)", body:`
-      <p>AURORA exige una <b>estrategia de anchor por cada shot</b>. Casos del template real:</p>
+    {h:"Anchor por shot (case types)", body:`
       <table>
-        <tr><th>case_type</th><th>Cuándo</th></tr>
-        <tr><td>simple_start</td><td>Toma simple desde un primer frame</td></tr>
-        <tr><td>start_and_end</td><td>Controlas primer y último frame (ideal Kling)</td></tr>
-        <tr><td>continuity_from_previous</td><td>El shot continúa del clip anterior</td></tr>
-        <tr><td>multishot_per_shot</td><td>Secuencia con ancla propia por toma</td></tr>
-        <tr><td>dialogue_long</td><td>Toma hablada extendida</td></tr>
+        <tr><th>case_type</th><th>Cuándo</th><th>Función real</th></tr>
+        <tr><td>simple_start</td><td>Toma simple</td><td>Kling start frame / Flow Text</td></tr>
+        <tr><td>start_and_end</td><td>Controlas primer y último frame</td><td>Kling start+end · Flow Frames to Video</td></tr>
+        <tr><td>continuity_from_previous</td><td>Continúa el clip anterior</td><td>Flow Extend · Kling last→start</td></tr>
+        <tr><td>multishot_per_shot</td><td>Secuencia con ancla por toma</td><td>ambas</td></tr>
+        <tr><td>dialogue_long</td><td>Toma hablada extendida</td><td>Veo audio nativo · Kling lip sync</td></tr>
       </table>`},
-    {h:"La técnica del 'último frame → primer frame'", body:`
-      <p>La continuidad más robusta entre dos clips: toma el <b>último frame del clip A</b> (o sus últimos instantes) y úsalo como <b>primer frame del clip B</b>. Así el corte es invisible: misma cara, misma luz, misma posición.</p>
+    {h:"Continuidad en Flow", body:`
+      <p>Flow trae la continuidad <b>integrada</b>:</p>
       <ul>
-        <li>En <span class="pill kling">Kling</span>: extrae el frame final y úsalo como start frame del siguiente I2V.</li>
-        <li>En <span class="pill flow">Flow</span>: usa Frames to Video / Scene Builder / extend para continuar la toma.</li>
-      </ul>
-      <div class="note">Regla AURORA: <b>no hagas multishot sin anchor strategy por shot.</b> Un shot sin ancla = salto visual garantizado.</div>`},
-    {h:"Continuity injection por plataforma", body:`
-      <p>Cada plataforma "inyecta" continuidad distinto: por <b>Ingredients</b> (Flow) o por <b>imagen de referencia / frame</b> (Kling). El plan de continuidad de tu spot debe decir, shot por shot, <b>qué ancla a qué</b> y por qué medio.</p>`}
+        <li><b>Extend</b> genera el siguiente clip desde el <b>último segundo</b> del previo → corte casi invisible.</li>
+        <li><b>Jump to</b> salta a un nuevo beat manteniendo el proyecto.</li>
+        <li><b>Ingredients</b> mantienen al sujeto consistente entre tomas.</li>
+      </ul>`},
+    {h:"Continuidad en Kling: último→primer frame", body:`
+      <p>La técnica más robusta entre dos clips de Kling:</p>
+      <ol class="steps kl">
+        <li>Genera el clip A.</li>
+        <li>Extrae su <b>último frame</b> (o el end frame que ya definiste).</li>
+        <li>Úsalo como <b>start frame</b> del clip B (Image to Video).</li>
+      </ol>
+      <p>Misma cara, misma luz, misma posición: el corte desaparece.</p>
+      <div class="note kl">Regla AURORA: <b>no hagas multishot sin anchor strategy por shot.</b> Un shot sin ancla = salto visual garantizado.</div>`}
+  ],
+  sources:[
+    {b:"off", t:"Flow — Jump to / Extend (Help oficial)", u:"https://support.google.com/flow/answer/16353334"},
+    {b:"off", t:"Kling — Start & End Frame (User Guide)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"},
+    {b:"tut", t:"Kling 3.0 Start & End Frame para video consistente (Tona.AI)", u:"https://tonaai.io/blog/kling-3-start-end-frame-tutorial"}
   ],
   quiz:[
-    {q:"¿Cuál es la técnica más robusta para un corte invisible entre dos clips?", o:["Subir el bitrate","Usar el último frame del clip A como primer frame del clip B","Cambiar de modelo","Agregar música"], a:1, e:"Encadenar último→primer frame mantiene cara, luz y posición."},
-    {q:"AURORA dice que no debes hacer multishot sin…", o:["Música","Anchor strategy por shot","Subtítulos","Color grading"], a:1, e:"Cada shot necesita su estrategia de ancla."},
-    {q:"El case_type ideal para controlar a dónde llega una toma en Kling es…", o:["simple_start","start_and_end","silent","none"], a:1, e:"start_and_end controla primer y último frame."},
-    {q:"La 'continuity injection' depende de…", o:["La plataforma (Ingredients en Flow, referencia/frame en Kling)","El precio","El idioma","El navegador"], a:0, e:"Cada plataforma inyecta continuidad por su propio mecanismo."}
+    {q:"¿Técnica más robusta para corte invisible en Kling?", o:["Subir bitrate","Último frame del clip A → start frame del clip B","Cambiar de modelo","Agregar música"], a:1, e:"Encadenar last→start mantiene cara, luz y posición."},
+    {q:"En Flow, la continuidad integrada se logra sobre todo con…", o:["Negative prompt","Extend (desde el último segundo) y Jump to","4K","Lip sync"], a:1, e:"Extend continúa desde el último segundo del clip previo."},
+    {q:"AURORA dice que no hagas multishot sin…", o:["Música","Anchor strategy por shot","Subtítulos","Color grading"], a:1, e:"Cada shot necesita su ancla."},
+    {q:"El case_type para controlar a dónde llega la toma es…", o:["simple_start","start_and_end","silent","none"], a:1, e:"start_and_end controla primer y último frame."}
   ],
   deliverable:{
     title:"Plan de continuidad de tu secuencia",
-    instructions:"Lista tus shots y di, para cada uno, su anchor y a qué se conecta.",
+    instructions:"Lista tus shots y, para cada uno, su anchor y la función real que lo conecta.",
     fields:[
       {id:"shotcount", type:"text", label:"¿Cuántos shots tiene tu spot?"},
-      {id:"chain", type:"textarea", label:"Mapa shot por shot: Shot N → case_type → ancla (qué frame/ingredient) → conecta con shot M"},
+      {id:"chain", type:"textarea", label:"Mapa: Shot N → case_type → función (Flow Extend/Jump to · Kling last→start / start+end) → conecta con shot M"},
       {id:"risk", type:"textarea", label:"¿Dónde está el mayor riesgo de salto visual y cómo lo previenes?"}
     ]
   }
 },
 /* 8 */ {
   icon:"8", title:"Biomecánica y física del movimiento",
-  lead:"Por qué la IA deforma cuerpos y objetos, y cómo escribir movimiento creíble. El gate que salva el realismo.",
+  lead:"Por qué la IA deforma cuerpos/objetos y cómo escribir movimiento creíble. El gate que salva el realismo.",
   objectives:[
-    "Detectar fallos biomecánicos típicos (manos, morphing, físicas imposibles).",
-    "Describir acción con física plausible y una sola intención de movimiento.",
+    "Detectar fallos típicos (manos, morphing, físicas imposibles).",
+    "Describir acción con física plausible y una sola intención.",
     "Construir un negative-prompt que ataque los fallos correctos."
   ],
   lessons:[
     {h:"Por qué la IA rompe los cuerpos", body:`
-      <p>Los modelos no "entienden" anatomía ni gravedad: predicen pixeles plausibles cuadro a cuadro. En movimiento eso produce <b>morphing</b> (la forma muta), <b>manos imposibles</b>, <b>físicas falsas</b> (peso que no cae, telas que flotan), y <b>parpadeo</b> de identidad.</p>
-      <p>Antídoto: describir el movimiento como lo haría un director de fotografía + un coreógrafo. Verbos de acción concretos, una sola intención de movimiento por toma, y física explícita.</p>`},
+      <p>Los modelos predicen pixeles plausibles cuadro a cuadro; no “entienden” anatomía ni gravedad. De ahí <b>morphing</b>, <b>manos imposibles</b>, <b>físicas falsas</b> y <b>parpadeo de identidad</b>. Antídoto: describir como un director de foto + coreógrafo.</p>`},
     {h:"Cómo describir movimiento creíble", body:`
       <div class="kv">Débil:  "el atleta corre rápido y hace cosas"
 Fuerte: "el sprinter explota de los bloques, brazos
@@ -573,78 +694,88 @@ Fuerte: "el sprinter explota de los bloques, brazos
         hacia adelante, tierra levantándose tras los
         spikes; slow-mo en la zancada de salida"</div>
       <ul>
-        <li><b>Una intención por toma</b>: no "salta, gira y aterriza y saluda" en 4s.</li>
+        <li><b>Una intención por toma</b> (no "salta, gira, aterriza y saluda" en 4s).</li>
         <li><b>Física explícita</b>: peso, impacto, inercia, dirección.</li>
         <li><b>Oposición y contacto</b>: qué toca qué, qué soporta el peso.</li>
-      </ul>`},
+      </ul>
+      <p>Ventaja por plataforma: en <span class="pill kling">Kling</span> el <b>motion brush</b> y el <b>end frame</b> acotan el movimiento (menos caos); en <span class="pill flow">Flow</span>, los <b>camera controls</b> separan el movimiento de cámara del movimiento del sujeto.</p>`},
     {h:"Negative-prompt biomecánico", body:`
-      <p>Ataca los fallos reales, no genéricos. Plantilla:</p>
       <div class="kv">Negative: morphing, warping, deformed hands, extra
 fingers, extra limbs, broken joints, floating objects,
 weightless motion, jitter, identity flicker, melting
 edges, rubber limbs</div>
-      <div class="note">Si una toma falla la misma articulación cada vez, cambia <b>una</b> variable (ángulo, velocidad del movimiento, o frame ancla) y vuelve a tirar. No cambies cinco cosas a la vez: no sabrás qué funcionó.</div>`}
+      <div class="note">Si falla la misma articulación cada vez, cambia <b>una</b> variable (ángulo, velocidad, o frame ancla) y vuelve a tirar. Nunca cambies cinco cosas a la vez.</div>`}
+  ],
+  sources:[
+    {b:"tut", t:"Kling AI Prompt Guide — negative prompts y control (Ambience AI)", u:"https://www.ambienceai.com/tutorials/kling-prompting-guide"},
+    {b:"off", t:"DeepMind — Guía de prompting de Veo (acción y consistencia)", u:"https://deepmind.google/models/veo/prompt-guide/"}
   ],
   quiz:[
-    {q:"¿Por qué la IA deforma manos y cuerpos en movimiento?", o:["Por falta de créditos","Porque predice pixeles plausibles sin entender anatomía/física","Por el navegador","Porque el prompt es muy corto siempre"], a:1, e:"No hay modelo de anatomía; predice cuadro a cuadro."},
-    {q:"¿Cuántas intenciones de movimiento por toma conviene?", o:["Las más posibles","Una sola, clara","Cero","Mínimo cuatro"], a:1, e:"Una intención por toma reduce morphing y caos."},
-    {q:"Un buen negative biomecánico incluye…", o:["'feo, malo'","morphing, deformed hands, extra limbs, floating objects, identity flicker","'4K, premium'","Nada"], a:1, e:"Ataca fallos concretos del movimiento."},
-    {q:"Si la misma articulación falla en cada intento, debes…", o:["Cambiar cinco variables a la vez","Cambiar UNA variable y volver a tirar","Rendirte","Subir el precio"], a:1, e:"Una variable por iteración: así sabes qué arregló el problema."}
+    {q:"¿Por qué la IA deforma manos/cuerpos en movimiento?", o:["Falta de créditos","Predice pixeles plausibles sin entender anatomía/física","El navegador","Prompt corto"], a:1, e:"No hay modelo de anatomía; predice cuadro a cuadro."},
+    {q:"¿Cuántas intenciones de movimiento por toma?", o:["Las más posibles","Una sola, clara","Cero","Cuatro mínimo"], a:1, e:"Una intención reduce morphing y caos."},
+    {q:"¿Qué herramienta de Kling acota el movimiento del sujeto?", o:["Aspect ratio","Motion brush y end frame","Sound on/off","Créditos"], a:1, e:"Motion brush + end frame restringen el movimiento."},
+    {q:"Si la misma articulación falla cada intento, debes…", o:["Cambiar cinco variables","Cambiar UNA variable y volver a tirar","Rendirte","Subir el precio"], a:1, e:"Una variable por iteración: así sabes qué lo arregló."}
   ],
   deliverable:{
     title:"Plan biomecánico del shot de acción",
-    instructions:"Toma el shot con más movimiento de tu spot y blíndalo.",
+    instructions:"Toma el shot con más movimiento y blíndalo.",
     fields:[
-      {id:"action", type:"textarea", label:"Descripción de la acción con física explícita (una sola intención)"},
+      {id:"action", type:"textarea", label:"Acción con física explícita (una sola intención)"},
       {id:"contact", type:"text", label:"Contacto/peso: ¿qué toca qué y qué soporta el peso?"},
-      {id:"negbio", type:"textarea", label:"Negative-prompt biomecánico específico para este shot"},
+      {id:"tool", type:"text", label:"¿Qué control usarás para acotar el movimiento? (motion brush / end frame / camera control)"},
+      {id:"negbio", type:"textarea", label:"Negative-prompt biomecánico específico"},
       {id:"iter", type:"text", label:"Si falla, ¿qué UNA variable cambiarás primero?"}
     ]
   }
 },
 /* 9 */ {
   icon:"9", title:"Audio, montaje y entrega",
-  lead:"De clips sueltos a un anuncio entregable: estrategia de audio, edición, formato y QA final.",
+  lead:"De clips sueltos a un anuncio entregable: audio (nativo Veo vs lip sync Kling vs externo), edición, formato y QA.",
   objectives:[
-    "Elegir audio_strategy y ejecutarla.",
-    "Encadenar, recortar y ajustar ritmo al hook.",
+    "Ejecutar tu audio_strategy según la plataforma.",
+    "Encadenar, recortar y ajustar el ritmo al hook.",
     "Hacer QA contra tus success_criteria y exportar al formato correcto."
   ],
   lessons:[
-    {h:"Estrategia de audio", body:`
-      <p>Tu brief ya declaró un <code>audio_strategy</code>. Cómo se ejecuta:</p>
+    {h:"Estrategia de audio por plataforma", body:`
       <ul>
-        <li><b>native_ai</b> — aprovechas el audio nativo de Veo (diálogo/SFX). Mínima postproducción de sonido.</li>
-        <li><b>external_track</b> — música/voz externa; sincronizas cortes a los beats de la pista.</li>
-        <li><b>mixed</b> — SFX nativos + música externa. Lo más común en anuncios pulidos.</li>
-        <li><b>silent</b> — diseñado para feed sin sonido; el mensaje vive en imagen y texto en pantalla.</li>
+        <li><b>native_ai</b> — en <span class="pill flow">Veo</span>: diálogo/SFX/ambiente generados; mínima post.</li>
+        <li><b>native_ai</b> — en <span class="pill kling">Kling 3.0</span>: <code>sound on</code> + lip sync (Omni); o lip-sync aplicado a un clip.</li>
+        <li><b>external_track</b> — música/voz externa; sincroniza cortes a los beats.</li>
+        <li><b>mixed</b> — SFX nativos + música externa (lo más común en anuncios pulidos).</li>
+        <li><b>silent</b> — diseñado para feed sin sonido; el mensaje vive en imagen + texto.</li>
       </ul>`},
     {h:"Montaje al servicio del hook", body:`
-      <p>Edita para que el <b>primer segundo</b> gane. Tácticas: arranca en el frame más fuerte (no en el "establecimiento"), corta en la acción, sincroniza impactos visuales con el sonido, y deja el <b>final_frame + CTA</b> respirar al cierre. Para vertical, comprime tiempos: lo que en cine son 4s, en Reels son 1.5s.</p>`},
+      <p>Edita para ganar el <b>primer segundo</b>: arranca en el frame más fuerte, corta en la acción, sincroniza impactos con el sonido y deja respirar el <b>final_frame + CTA</b>. En vertical, comprime tiempos (lo que en cine son 4s, en Reels 1.5s).</p>`},
     {h:"QA final y export", body:`
-      <p>Antes de entregar, revisa contra tus <b>success_criteria</b> (etapa 2). Checklist mínimo:</p>
+      <p>Revisa contra tus <b>success_criteria</b> (etapa 2):</p>
       <ul>
-        <li>¿Personaje/producto idéntico en todos los shots? (color HEX incluido)</li>
-        <li>¿Cero morphing/manos rotas visibles?</li>
+        <li>¿Personaje/producto idéntico en todos los shots? (incl. color HEX)</li>
+        <li>¿Cero morphing/manos rotas?</li>
         <li>¿El hook comunica en &lt;2s?</li>
-        <li>¿Logo/CTA legible en el cierre, en el aspect ratio final?</li>
+        <li>¿Logo/CTA legible al cierre, en el aspect ratio final?</li>
         <li>¿Audio sincronizado y sin desfase?</li>
-        <li>¿Aspect ratio y duración correctos para el canal? (9:16 social, 16:9 YouTube, etc.)</li>
+        <li>¿Aspect ratio y duración correctos para el canal? (9:16 social, 16:9 YouTube)</li>
       </ul>
-      <div class="note acc">Exporta en la resolución/relación de aspecto del canal destino. No "estires" un 16:9 a 9:16: recompón o regenera el shot en vertical.</div>`}
+      <div class="note acc">Genera en el aspect ratio destino (ambas plataformas ofrecen 16:9 y 9:16). No estires un 16:9 a 9:16: recompón o regenera el shot en vertical. Para resolución final, considera Pro/4K en Kling o 1080p/4K en Veo.</div>`}
+  ],
+  sources:[
+    {b:"off", t:"Veo — audio nativo y resoluciones (DeepMind)", u:"https://deepmind.google/models/veo/"},
+    {b:"off", t:"Kling — User Guide (sound / lip sync / extend)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"},
+    {b:"tut", t:"Veo 3 Native Audio Prompt Guide (diálogo, SFX, lip sync)", u:"https://www.veo3ai.io/blog/veo-3-native-audio-prompt-guide-2026"}
   ],
   quiz:[
-    {q:"audio_strategy = native_ai aprovecha sobre todo…", o:["Música de stock","El audio nativo de Veo (diálogo/SFX)","Silencio","Lip-sync de Kling"], a:1, e:"native_ai = audio generado por el modelo, mínima post."},
-    {q:"Para social vertical, el montaje debe…", o:["Empezar con tomas de establecimiento largas","Ganar el primer segundo y comprimir tiempos","Durar lo máximo","Evitar texto en pantalla siempre"], a:1, e:"El primer segundo decide; los tiempos se comprimen."},
-    {q:"El QA final se hace contra…", o:["El gusto del momento","Tus success_criteria de la etapa 2","Lo que diga un blog","La cantidad de créditos"], a:1, e:"Los criterios medibles del brief son tu vara."},
-    {q:"Si necesitas 9:16 pero tu shot es 16:9, lo correcto es…", o:["Estirarlo","Recomponer o regenerar el shot en vertical","Subir resolución","Dejarlo así"], a:1, e:"Estirar deforma; recompón o regenera en el aspect ratio destino."}
+    {q:"native_ai en Veo aprovecha…", o:["Música stock","Audio nativo (diálogo/SFX/ambiente)","Silencio","Lip sync de Kling"], a:1, e:"Veo genera audio nativo; mínima post."},
+    {q:"En Kling 3.0, el audio + sincronía labial se logra con…", o:["external_track siempre","sound on + lip sync (Omni) o lip-sync sobre el clip","Motion brush","End frame"], a:1, e:"Kling 3.0 Omni trae audio nativo con lip sync."},
+    {q:"El QA final se hace contra…", o:["El gusto del momento","Tus success_criteria de la etapa 2","Un blog","Los créditos"], a:1, e:"Los criterios medibles del brief son tu vara."},
+    {q:"Si necesitas 9:16 pero tu shot es 16:9…", o:["Lo estiras","Recompones o regeneras en vertical (ambas apps dan 9:16)","Subes resolución","Lo dejas"], a:1, e:"Estirar deforma; regenera en el aspect destino."}
   ],
   deliverable:{
     title:"Plan de montaje + checklist de QA",
-    instructions:"Cierra la producción con un plan de armado y verificación.",
+    instructions:"Cierra la producción con plan de armado y verificación.",
     fields:[
-      {id:"audioplan", type:"textarea", label:"Cómo ejecutarás tu audio_strategy"},
-      {id:"editplan", type:"textarea", label:"Orden de los shots y dónde caen los cortes/beats"},
+      {id:"audioplan", type:"textarea", label:"Cómo ejecutarás tu audio_strategy (Veo nativo / Kling lip sync / externo / mixed)"},
+      {id:"editplan", type:"textarea", label:"Orden de shots y dónde caen cortes/beats"},
       {id:"aspect", type:"text", label:"Aspect ratio y duración finales para tu canal"},
       {id:"qa", type:"check", label:"Hice el QA contra mis success_criteria (consistencia, biomecánica, hook, CTA legible, audio, formato)."}
     ]
@@ -652,24 +783,27 @@ edges, rubber limbs</div>
 },
 /* 10 */ {
   icon:"★", title:"Proyecto final — Capstone", final:true,
-  lead:"Produce y documenta un spot completo de principio a fin aplicando todo el método AURORA.",
+  lead:"Produce y documenta un spot completo aplicando todo el método AURORA, con al menos un shot en Flow y uno en Kling.",
   objectives:[
     "Integrar brief, génesis, prompts por plataforma, continuidad, biomecánica y entrega.",
-    "Decidir y justificar Flow vs Kling por shot.",
+    "Decidir y justificar Flow vs Kling por shot, según sus funciones reales.",
     "Entregar un anuncio coherente con su documentación."
   ],
   lessons:[
     {h:"El reto", body:`
-      <p>Produce un anuncio corto (sugerido <b>10–20s</b>) para tu marca de práctica, usando <b>al menos un shot en Flow y uno en Kling</b>, encadenados con continuidad real.</p>
-      <p>Antes de generar nada, tu documentación debe estar completa: brief validado, génesis de assets, prompts por shot y plataforma, plan de continuidad, plan biomecánico del shot de acción y plan de montaje/QA. Es exactamente lo que ya construiste etapa por etapa: aquí lo integras.</p>`},
-    {h:"Flow vs Kling: la decisión por shot", body:`
-      <p>No elijas una plataforma "para todo". Elige <b>por shot</b>:</p>
-      <ul>
-        <li>Shot hablado con SFX ambiente → favorece <span class="pill flow">Flow/Veo</span> (audio nativo).</li>
-        <li>Shot de producto con movimiento controlado y aterrizaje exacto en el final_frame → favorece <span class="pill kling">Kling</span> (start/end frame, motion brush).</li>
-      </ul>
-      <p>Documenta el porqué de cada decisión: AURORA premia la justificación, no la moda.</p>`},
-    {h:"Rúbrica de evaluación del capstone", body:`
+      <p>Produce un anuncio corto (sugerido <b>10–20s</b>) para tu marca de práctica, con <b>al menos un shot en Flow y uno en Kling</b>, encadenados con continuidad real (Extend/Jump to o last→start frame).</p>
+      <p>Antes de generar nada, tu documentación debe estar completa: brief validado, génesis, prompts por shot/plataforma, plan de continuidad, plan biomecánico y plan de montaje/QA. Es lo que ya construiste etapa por etapa.</p>`},
+    {h:"Flow vs Kling: decisión por shot (con funciones reales)", body:`
+      <table>
+        <tr><th>Necesidad del shot</th><th>Plataforma favorecida</th><th>Función concreta</th></tr>
+        <tr><td>Diálogo + SFX ambiente</td><td class="pill flow">Flow/Veo</td><td>Audio nativo</td></tr>
+        <tr><td>Aterrizar exacto en el final_frame</td><td class="pill kling">Kling</td><td>start + end frame</td></tr>
+        <tr><td>Insert de producto con movimiento aislado</td><td class="pill kling">Kling</td><td>Motion brush (regiones)</td></tr>
+        <tr><td>Secuencia larga continua</td><td class="pill flow">Flow</td><td>Extend / Jump to</td></tr>
+        <tr><td>Sujeto consistente de referencia</td><td>ambas</td><td>Ingredients / Elements</td></tr>
+      </table>
+      <p>Documenta el <b>porqué</b> de cada decisión: AURORA premia la justificación, no la moda.</p>`},
+    {h:"Rúbrica del capstone", body:`
       <table>
         <tr><th>Criterio</th><th>Qué se evalúa</th></tr>
         <tr><td>Preproducción</td><td>Brief completo y final_frame claro</td></tr>
@@ -680,21 +814,25 @@ edges, rubber limbs</div>
         <tr><td>Impacto</td><td>Hook &lt;2s, final_frame + CTA memorables</td></tr>
       </table>`}
   ],
+  sources:[
+    {b:"off", t:"Flow — Help oficial (referencia para tus shots de Flow)", u:"https://support.google.com/flow/answer/16353334"},
+    {b:"off", t:"Kling — User Guide oficial (referencia para tus shots de Kling)", u:"https://app.klingai.com/global/quickstart/klingai-video-o1-user-guide"}
+  ],
   quiz:[
-    {q:"En el capstone, ¿cómo eliges entre Flow y Kling?", o:["Una sola para todo","Por shot, según dónde brilla cada una, justificándolo","Al azar","La más barata"], a:1, e:"Decisión por shot, justificada. Es el núcleo del método."},
-    {q:"¿Qué debe existir ANTES de generar el primer clip?", o:["Nada, improvisas","Brief validado + génesis + prompts + continuidad + biomecánica + montaje","Solo el logo","Solo la música"], a:1, e:"Toda la documentación primero: producción sin preproducción está prohibida."},
-    {q:"Un shot de diálogo con ambiente sonoro favorece…", o:["Kling por lip-sync siempre","Flow/Veo por audio nativo","Da igual","Ninguna"], a:1, e:"Veo genera audio nativo; suele ser mejor para diálogo+SFX. (Ambas son válidas si lo justificas.)"},
-    {q:"Un shot de producto que debe aterrizar exacto en el final_frame favorece…", o:["Flow text-to-video","Kling con start/end frame","Silencio","Motion en Flow"], a:1, e:"start+end frame de Kling controla el arco y el aterrizaje."}
+    {q:"¿Cómo eliges entre Flow y Kling en el capstone?", o:["Una sola para todo","Por shot, según su función real, justificándolo","Al azar","La más barata"], a:1, e:"Decisión por shot, justificada con la función concreta."},
+    {q:"¿Qué debe existir ANTES de generar el primer clip?", o:["Nada","Brief validado + génesis + prompts + continuidad + biomecánica + montaje","Solo el logo","Solo la música"], a:1, e:"Toda la documentación primero."},
+    {q:"Un insert de producto donde solo el líquido se mueve favorece…", o:["Flow Text-to-Video","Kling con Motion Brush","Silencio","Jump to"], a:1, e:"Motion brush aísla el movimiento por región."},
+    {q:"Un shot de diálogo con ambiente sonoro favorece…", o:["Kling por defecto","Flow/Veo por audio nativo (válido Kling si lo justificas)","Da igual","Ninguna"], a:1, e:"Veo genera audio nativo; ideal para diálogo + SFX."}
   ],
   deliverable:{
     title:"Entrega del proyecto final",
     instructions:"Documenta tu spot completo. Este es tu portafolio del curso.",
     fields:[
       {id:"concept", type:"textarea", label:"Concepto del spot (1 párrafo) + duración y canal"},
-      {id:"shotlist", type:"textarea", label:"Shot list: para cada shot → plataforma elegida + por qué + anchor"},
+      {id:"shotlist", type:"textarea", label:"Shot list: para cada shot → plataforma + función concreta usada + por qué + anchor"},
       {id:"links", type:"textarea", label:"Enlaces/notas de los clips generados (o describe el resultado de cada shot)"},
       {id:"learnings", type:"textarea", label:"¿Qué falló, qué variable cambiaste y qué aprendiste? (iteración honesta)"},
-      {id:"selfgrade", type:"textarea", label:"Autoevaluación contra la rúbrica (preproducción, consistencia, continuidad, biomecánica, plataforma, impacto)"},
+      {id:"selfgrade", type:"textarea", label:"Autoevaluación contra la rúbrica"},
       {id:"done", type:"check", label:"Mi spot usa al menos un shot en Flow y uno en Kling, encadenados con continuidad real."}
     ]
   }
@@ -704,7 +842,7 @@ edges, rubber limbs</div>
 /* ============================================================
    Estado / persistencia
    ============================================================ */
-const LS_KEY = "aurora_academy_v1";
+const LS_KEY = "aurora_academy_v2";
 let state = load();
 let current = state.current || 0;
 
@@ -715,10 +853,7 @@ function load(){
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 function st(i){ if(!state.stages[i]) state.stages[i] = {quizBest:0, quizPassed:false, answers:{}, deliv:{}, delivSaved:false}; return state.stages[i]; }
 
-function isUnlocked(i){
-  if(i===0) return true;
-  return !!st(i-1).quizPassed;
-}
+function isUnlocked(i){ if(i===0) return true; return !!st(i-1).quizPassed; }
 function isComplete(i){ const s=st(i); return s.quizPassed && s.delivSaved; }
 
 /* ============================================================
@@ -739,10 +874,11 @@ function renderNav(){
     if(unlocked) div.onclick = ()=>{ current=i; state.current=i; save(); render(); window.scrollTo(0,0); };
     nav.appendChild(div);
   });
-  // global progress
   const done = STAGES.filter((_,i)=>isComplete(i)).length;
   document.getElementById("globalbar").style.width = Math.round(done/STAGES.length*100)+"%";
 }
+
+const BADGE_LABEL = {off:"OFICIAL", tut:"TUTORIAL", mcp:"CONECTOR"};
 
 function render(){
   renderNav();
@@ -757,15 +893,22 @@ function render(){
   html += `<h2 class="stage">${s.icon==='★'?'★ ':''}${s.title}</h2>`;
   html += `<p class="lead">${s.lead}</p>`;
 
-  // objectives
   html += `<div class="card"><h3><span class="tag">OBJETIVOS</span></h3><ul class="objectives">`;
   s.objectives.forEach(o=> html += `<li>${o}</li>`);
   html += `</ul></div>`;
 
-  // lessons
-  s.lessons.forEach(l=>{
-    html += `<div class="card"><h3>${l.h}</h3>${l.body}</div>`;
-  });
+  s.lessons.forEach(l=>{ html += `<div class="card"><h3>${l.h}</h3>${l.body}</div>`; });
+
+  // sources
+  if(s.sources && s.sources.length){
+    html += `<div class="card"><h3><span class="tag">FUENTES Y TUTORIALES REALES</span></h3><ul class="srcs">`;
+    s.sources.forEach(src=>{
+      const lbl = BADGE_LABEL[src.b] || "FUENTE";
+      const link = src.u ? `<a href="${src.u}" target="_blank" rel="noopener">${src.t}</a>` : `<span>${src.t}</span>`;
+      html += `<li><span class="badge ${src.b}">${lbl}</span>${link}</li>`;
+    });
+    html += `</ul></div>`;
+  }
 
   // quiz
   html += `<div class="card" id="quizcard"><h3><span class="tag">EVALUACIÓN</span> — necesitas ${Math.round(PASS*100)}% para aprobar</h3>`;
@@ -786,9 +929,7 @@ function render(){
   const dlocked = !sObj.quizPassed;
   html += `<div class="card"><h3><span class="tag">ENTREGABLE</span> — ${s.deliverable.title} ${isComplete(current)?'<span class="pill ok">guardado</span>':''}</h3>`;
   html += `<p style="font-size:14px;color:var(--muted)">${s.deliverable.instructions}</p>`;
-  if(dlocked){
-    html += `<div class="note">Aprueba la evaluación para habilitar el entregable.</div>`;
-  }
+  if(dlocked){ html += `<div class="note">Aprueba la evaluación para habilitar el entregable.</div>`; }
   s.deliverable.fields.forEach(f=>{
     const val = sObj.deliv[f.id] || "";
     if(f.type==="check"){
@@ -803,7 +944,7 @@ function render(){
   html += `<div class="btnrow"><button class="act" onclick="saveDeliv()" ${dlocked?'disabled':''}>Guardar entregable</button>
            <span class="saved ${sObj.delivSaved?'show':''}" id="delivsaved">✓ Guardado en este navegador</span></div></div>`;
 
-  // footer nav
+  // footer
   html += `<div class="stagefoot">`;
   if(current>0) html += `<button class="ghost" onclick="go(${current-1})">← Anterior</button>`; else html += `<span></span>`;
   if(current<STAGES.length-1){
@@ -859,9 +1000,7 @@ function grade(){
     ? `✓ ${correct}/${s.quiz.length} (${Math.round(score*100)}%). Aprobado. Entregable y siguiente etapa desbloqueados.`
     : `✗ ${correct}/${s.quiz.length} (${Math.round(score*100)}%). Necesitas ${Math.round(PASS*100)}%. Revisa las explicaciones y reintenta.`;
   renderNav();
-  if(passed){ // re-render to unlock deliverable inputs
-    setTimeout(render, 900);
-  }
+  if(passed){ setTimeout(render, 900); }
 }
 
 function saveDeliv(){
